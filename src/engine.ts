@@ -1,34 +1,43 @@
 import { randomUUID } from "node:crypto";
-import type { Critic, Evidence, LedgerEvent, Mission, MissionConfig, Pass, Receipt, ResearchState, Run, SessionEntry, Verdict } from "./types.ts";
+import { CRITIC_INSTRUCTIONS } from "./critic.ts";
+import type { Critic, Evidence, Intake, LedgerEvent, Mission, MissionConfig, MissionSettings, Pass, Receipt, ResearchState, Run, SessionEntry, Verdict } from "./types.ts";
 import { canonicalUrl, choice, hash, integer, object, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
-const EVENT_TYPES = ["mission_created", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "run_logged", "run_flagged", "notes_updated", "critic_recorded", "verdict_issued"] as const;
-export const DEFAULT_CONFIG: Omit<MissionConfig, "objective"> = {
-  mode: "web", constraints: ["Research only; do not implement or modify product code."],
+const EVENT_TYPES = ["intake_started", "intake_cancelled", "mission_created", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "run_logged", "run_flagged", "notes_updated", "critic_recorded", "verdict_issued"] as const;
+export const DEFAULT_SETTINGS: MissionSettings = {
+  constraints: ["Research only; do not implement or modify product code."],
   deliverables: ["A structured verdict with evidence, caveats, and a reproducible report."],
-  maxContinuations: 6, maxToolCalls: 60, maxMinutes: 20, allowExec: false,
+  maxContinuations: 6, maxToolCalls: 60, maxMinutes: 20, allowExec: false, allowHarness: false,
 };
 
-export function validateConfig(raw: unknown): MissionConfig {
-  const c = object(raw, "config");
+export function validateSettings(raw: unknown): MissionSettings {
+  const c = object(raw, "settings");
   if (typeof c.allowExec !== "boolean") throw new ResearchError("allowExec must be a boolean");
-  if (c.allowExec && c.mode === "web") throw new ResearchError("--allow-exec is only supported in data/mixed mode");
+  if (typeof c.allowHarness !== "boolean") throw new ResearchError("allowHarness must be a boolean");
   return {
-    objective: text(c.objective, "objective", 6000), mode: choice(c.mode, ["web", "data", "mixed"], "mode"),
     constraints: strings(c.constraints, "constraints"), deliverables: strings(c.deliverables, "deliverables"),
     maxContinuations: integer(c.maxContinuations, "maxContinuations", 0, 8),
     maxToolCalls: integer(c.maxToolCalls, "maxToolCalls", 1, 1000),
-    maxMinutes: integer(c.maxMinutes, "maxMinutes", 1, 240), allowExec: c.allowExec,
+    maxMinutes: integer(c.maxMinutes, "maxMinutes", 1, 240), allowExec: c.allowExec, allowHarness: c.allowHarness,
     ...(c.criticModel ? { criticModel: text(c.criticModel, "criticModel", 200) } : {}),
     ...(c.primaryModel ? { primaryModel: text(c.primaryModel, "primaryModel", 200) } : {}),
   };
+}
+export function validateConfig(raw: unknown): MissionConfig {
+  const c = object(raw, "config");
+  const mode = choice(c.mode, ["web", "data", "mixed"], "mode");
+  const settings = validateSettings(c);
+  if (mode === "web" && (settings.allowExec || settings.allowHarness)) throw new ResearchError("--allow-exec and --harness are only supported in data/mixed mode");
+  return { ...settings, objective: text(c.objective, "objective", 6000), mode };
 }
 function newPass(config: MissionConfig, at: string): Pass {
   return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [] };
 }
 export function current(state: ResearchState): Mission {
-  if (!state.mission) throw new ResearchError("No mission. Start one with /deep-research --mode web <objective>.");
+  if (!state.mission) throw new ResearchError(state.intake
+    ? "Intake is pending. Clarify the mission with the user, then call deep_research op='start'."
+    : "No mission. Start one with /deep-research --mode web|data|mixed <objective>, or /deep-research <objective> for a clarifying intake.");
   return state.mission;
 }
 export function active(state: ResearchState): Mission {
@@ -49,10 +58,20 @@ export function bestRun(m: Mission): Run | undefined {
 }
 function apply(state: ResearchState, event: LedgerEvent): void {
   const d = object(event.data, "event.data");
+  if (event.type === "intake_started") {
+    state.intake = { id: event.missionId, startedAt: event.at, draft: typeof d.draft === "string" ? d.draft : "", settings: validateSettings(d.settings) };
+    return;
+  }
+  if (event.type === "intake_cancelled") {
+    if (state.intake?.id !== event.missionId) throw new ResearchError("Research ledger intake ordering is invalid");
+    state.intake = undefined;
+    return;
+  }
   if (event.type === "mission_created") {
     const config = validateConfig(d.config);
     const pass = object(d.pass) as unknown as Pass;
     if (!Array.isArray(pass.toolCalls) || !Number.isFinite(Date.parse(pass.deadlineAt))) throw new ResearchError("Corrupt research pass");
+    if (state.intake?.id === event.missionId) state.intake = undefined;
     state.mission = { ...config, id: event.missionId, createdAt: event.at, phase: "active", pass: structuredClone(pass), receipts: [], evidence: [], runs: [], critics: [], verdicts: [], notes: "" };
     return;
   }
@@ -101,12 +120,25 @@ export function restore(entries: readonly SessionEntry[]): ResearchState {
 export function makeEvent(missionId: string, type: LedgerEvent["type"], data: unknown, at = new Date().toISOString(), requestId?: string, requestHash?: string): LedgerEvent {
   return { schemaVersion: 1, id: randomUUID(), missionId, at, type, data, ...(requestId ? { requestId, requestHash } : {}) };
 }
-export function startEvent(state: ResearchState, config: MissionConfig, at = new Date().toISOString()): LedgerEvent {
+function assertNoOpenWork(state: ResearchState): void {
+  if (state.intake) throw new ResearchError("An intake is pending. Finish it in the conversation or use /deep-research cancel.");
   if (state.mission && ["active", "paused"].includes(state.mission.phase)) throw new ResearchError("An open mission exists. Resume it or use /deep-research clear before starting another.");
+}
+export function startEvent(state: ResearchState, config: MissionConfig, at = new Date().toISOString()): LedgerEvent {
+  assertNoOpenWork(state);
   const validated = validateConfig(config);
   return makeEvent(randomUUID(), "mission_created", { config: validated, pass: newPass(validated, at) }, at);
 }
+/** Cold intake: no mission exists until the agent clarifies objective, mode, constraints and deliverables. */
+export function intakeEvent(state: ResearchState, draft: string, settings: MissionSettings, at = new Date().toISOString()): LedgerEvent {
+  assertNoOpenWork(state);
+  return makeEvent(randomUUID(), "intake_started", { draft, settings: validateSettings(settings) }, at);
+}
 export function lifecycleEvent(state: ResearchState, op: "resume" | "pause" | "cancel" | "clear", at = new Date().toISOString(), reason?: string): LedgerEvent {
+  if (state.intake) {
+    if (op === "pause" || op === "resume") throw new ResearchError("An intake is pending; there is no mission pass to pause or resume. Use cancel to abandon it.");
+    return makeEvent(state.intake.id, "intake_cancelled", { reason: reason ?? `User requested ${op}` }, at);
+  }
   const m = current(state);
   if (op === "resume") {
     if (m.phase !== "paused") throw new ResearchError("Only a paused/inconclusive mission can resume; completed/cancelled missions need a new mission.");
@@ -123,14 +155,15 @@ export function budgetReason(m: Mission, now = Date.now()): string | undefined {
 }
 export function summary(state: ResearchState): unknown {
   const m = state.mission;
-  if (!m) return { mission: null };
+  const intake = state.intake ? { intake: state.intake } : {};
+  if (!m) return { mission: null, ...intake };
   return { id: m.id, objective: m.objective, mode: m.mode, phase: m.phase, pauseReason: m.pauseReason,
-    constraints: m.constraints, deliverables: m.deliverables, allowExec: m.allowExec, criticModel: m.criticModel,
+    constraints: m.constraints, deliverables: m.deliverables, allowExec: m.allowExec, allowHarness: m.allowHarness, criticModel: m.criticModel,
     pass: { ...m.pass, toolCalls: m.pass.toolCalls.length },
     limits: { continuations: m.maxContinuations, toolCalls: m.maxToolCalls },
     counts: { receipts: m.receipts.length, evidence: m.evidence.length, runs: m.runs.length },
     evidenceDigest: evidenceDigest(m), bestRun: bestRun(m), notes: m.notes,
-    verdict: m.verdicts.at(-1), evidence: m.evidence.map(({ id, title, stance, locator }) => ({ id, title, stance, locator })) };
+    verdict: m.verdicts.at(-1), evidence: m.evidence.map(({ id, title, stance, locator }) => ({ id, title, stance, locator })), ...intake };
 }
 function receipt(m: Mission, id: unknown): Receipt {
   const r = m.receipts.find(r => r.id === text(id, "receiptId", 200));
@@ -144,29 +177,47 @@ function references(m: Mission, value: unknown, name: string, required = true): 
   return ids;
 }
 export interface Prepared { event?: LedgerEvent; result: unknown; }
+/** Completes a cold intake. Operator settings (budgets, execution consent, critic) are never model-controlled. */
+function startMission(intake: Intake | undefined, raw: unknown, requestId: string, requestHash: string, at: string): Prepared {
+  if (!intake) throw new ResearchError("No pending intake. Only the user can begin one with /deep-research <objective>.");
+  const p = object(raw, "mission");
+  const config = validateConfig({ ...intake.settings, objective: p.objective, mode: p.mode,
+    constraints: [...new Set([...intake.settings.constraints, ...strings(p.constraints, "mission.constraints")])],
+    deliverables: [...new Set([...intake.settings.deliverables, ...strings(p.deliverables, "mission.deliverables")])] });
+  const data = { config, pass: newPass(config, at) };
+  return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
+}
 /** Pure operation preparation; the adapter persists the event before reporting success. */
 export function prepareOperation(state: ResearchState, raw: unknown, toolCallId: string, evaluator: string, at = new Date().toISOString()): Prepared {
   const input = object(raw);
-  const op = choice(input.op, ["read", "evidence", "run", "flag_run", "notes", "critic", "verdict", "export"], "op");
+  const op = choice(input.op, ["read", "start", "evidence", "run", "flag_run", "notes", "critic", "verdict", "export"], "op");
   if (op === "read") {
-    const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts"], "view");
+    const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "critic"], "view");
     if (view === "receipts") {
       const receipts = [...current(state).receipts].reverse();
       const offset = input.offset === undefined ? 0 : integer(input.offset, "offset", 0, 10000);
       const limit = input.limit === undefined ? 12 : integer(input.limit, "limit", 1, 100);
       return { result: { total: receipts.length, offset, receipts: receipts.slice(offset, offset + limit), nextOffset: offset + limit < receipts.length ? offset + limit : null } };
     }
+    if (view === "critic") {
+      const m = current(state);
+      return { result: { instructions: CRITIC_INSTRUCTIONS, criticModel: m.criticModel ?? null, evidenceDigest: evidenceDigest(m),
+        evidenceIds: m.evidence.map(e => e.id), snapshot: { objective: m.objective, mode: m.mode, constraints: m.constraints,
+          deliverables: m.deliverables, evidence: m.evidence, runs: m.runs, bestRunId: bestRun(m)?.id ?? null, notes: m.notes } } };
+    }
     return { result: view === "full" ? state.mission ?? null : summary(state) };
   }
   if (op === "export") return { result: current(state) };
-  const m = current(state);
   const requestId = input.requestId === undefined ? toolCallId : text(input.requestId, "requestId", 200);
   const requestHash = hash(input);
-  const previous = state.events.find(e => e.missionId === m.id && e.requestId === requestId);
+  const scope = state.intake?.id ?? state.mission?.id;
+  const previous = scope === undefined ? undefined : state.events.find(e => e.missionId === scope && e.requestId === requestId);
   if (previous) {
     if (previous.requestHash !== requestHash) throw new ResearchError("requestId was already used with different input");
     return { result: { duplicate: true, ...object(previous.data) } };
   }
+  if (op === "start") return startMission(state.intake, input.mission, requestId, requestHash, at);
+  const m = current(state);
   active(state);
   const emit = (type: LedgerEvent["type"], data: object): Prepared => ({ event: makeEvent(m.id, type, data, at, requestId, requestHash), result: data });
   switch (op) {

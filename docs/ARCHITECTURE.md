@@ -6,14 +6,17 @@
 
 `src/engine.ts` prepares and replays versioned events. `prepareOperation` validates an operation and returns a new event plus its result; the adapter appends the event before returning success. `src/types.ts` defines the persisted data structures. The active OMP branch is the source of truth, so there is no shared mutable module-level mission cache to leak across rebinding or children.
 
-`src/command.ts` parses explicit operator lifecycle and budget choices. It tokenizes without shell evaluation. Execution permission cannot be enabled with a model tool call. A critic selector is resolved through the host before mission creation.
+`src/command.ts` parses explicit operator lifecycle and budget choices. It tokenizes without shell evaluation. With `--mode` it produces a mission config; without it, an intake with operator settings only. Execution permission (`--harness`, `--allow-exec`) cannot be enabled with a model tool call. A critic selector is resolved through the host before the mission or intake is recorded.
 
-`src/policy.ts` governs known parent tool calls. `src/report.ts` performs explicit, append-only local exports. `src/schema.ts` declares the model-visible schema using the host-provided builder. `src/host.ts` is a small structural contract, not a vendored host SDK or a claim that the real SDK was type-checked locally.
+`src/policy.ts` governs known parent tool calls, including the intake allowlist and the `--harness` file/command check. `src/critic.ts` holds the critic brief returned by `view:"critic"`. `src/report.ts` performs explicit, append-only local exports. `src/schema.ts` declares the model-visible schema using the host-provided builder. `src/host.ts` is a small structural contract, not a vendored host SDK or a claim that the real SDK was type-checked locally.
 
 ## State transitions
 
 ```text
-(no mission) --operator start--> active
+(nothing) --operator start with --mode--> active
+(nothing) --operator start without --mode--> intake (no mission; non-control tools blocked)
+intake --agent deep_research op:"start" with clarified objective/mode--> active
+intake --operator cancel/clear--> (nothing)
 active --operator pause / abort / error / budget--> paused
 active --inconclusive verdict--> paused
 paused --operator resume (new pass budget)--> active
@@ -40,9 +43,11 @@ The receipt preview is at most 2,400 characters; the SHA-256 digest covers the f
 
 ## Runs and criticism
 
-Metrics are parsed from the tool output, not taken from a model-supplied numeric score. Non-finite or duplicate metric lines invalidate the run. First valid result is baseline; further results compare with the best unflagged valid run. Flagging is append-only and changes future best-run calculations.
+Metrics are parsed from the tool output, not taken from a model-supplied numeric score. Non-finite or duplicate metric lines invalidate the run. A host error result (OMP marks non-zero bash exit as an error) is a crash. First valid result is baseline; further results compare with the best unflagged valid run. Flagging is append-only and changes future best-run calculations.
 
-A critic receipt binds a declared distinct evaluator to all current evidence IDs and an evidence/run digest. New evidence or a run/flag change invalidates the review. A configured critic is required for conclusive output. An inconclusive result is always possible with explicit caveats. Independent identity and benchmark correctness are not proven by these structural checks.
+With `--harness`, the policy allows `write` only when the path resolves to `<session cwd>/autoresearch.sh` and that path is absent or a regular file with one link (no symlink or hard link to product code), and `bash` only when the command is exactly `bash autoresearch.sh` / `sh ./autoresearch.sh`, not async, not a service, in the session root. The harness body is unrestricted agent-written code; this is a consent and reviewability boundary, not isolation.
+
+A critic receipt binds a declared distinct evaluator to all current evidence IDs and an evidence/run digest. `view:"critic"` returns the instructions, the full evidence/run snapshot and that digest so the parent can hand an identical brief to a `scout` pinned to the critic model. New evidence or a run/flag change invalidates the review. A configured critic is required for conclusive output. An inconclusive result is always possible with explicit caveats. Independent identity and benchmark correctness are not proven by these structural checks.
 
 ## Continuation and authority
 

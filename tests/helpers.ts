@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, ENTRY_TYPE, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
+import { DEFAULT_SETTINGS, ENTRY_TYPE, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
 import type { LedgerEvent, MissionConfig, Receipt, SessionEntry } from "../src/types.ts";
 export const NOW = "2026-10-06T00:00:00.000Z";
 export class Ledger {
@@ -7,7 +7,7 @@ export class Ledger {
   state() { return restore(this.entries); }
   add(event: LedgerEvent) { this.entries.push({ type: "custom", customType: ENTRY_TYPE, data: structuredClone(event) }); }
   start(overrides: Partial<MissionConfig> = {}) {
-    this.add(startEvent(this.state(), { ...structuredClone(DEFAULT_CONFIG), objective: "Compare two approaches", primaryModel: "test/main", ...overrides }, NOW));
+    this.add(startEvent(this.state(), { ...structuredClone(DEFAULT_SETTINGS), mode: "web", objective: "Compare two approaches", primaryModel: "test/main", ...overrides }, NOW));
     return this.state().mission!;
   }
   receipt(overrides: Partial<Receipt> = {}) {

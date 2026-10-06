@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { canonicalUrl, hash, parseMetrics } from "../src/validation.ts";
 import { parseCommand, tokenize } from "../src/command.ts";
-import { blockedReason } from "../src/policy.ts";
+import { blockedReason, intakeBlockedReason } from "../src/policy.ts";
 import { Ledger } from "./helpers.ts";
+const CWD = "/research-root";
 
 test("parses finite metrics including exponent and negative values", () => {
   assert.deepEqual({ ...parseMetrics("METRIC score=1e-3\nMETRIC loss=-.5\nother output").metrics }, { score: .001, loss: -.5 });
@@ -27,41 +31,67 @@ test("command parses explicit execution consent and budgets", () => {
   assert.equal(c.op, "start"); if (c.op !== "start") return;
   assert.equal(c.config.allowExec, true); assert.equal(c.config.maxContinuations, 3); assert.equal(c.config.objective, "Compare A and B");
 });
-test("command defaults are visible and conservative", () => {
-  const c = parseCommand("Inspect current releases"); if (c.op !== "start") throw new Error("Expected start");
-  assert.equal(c.config.mode, "web"); assert.equal(c.config.allowExec, false);
+test("without --mode the command opens an intake instead of inferring a mode", () => {
+  const c = parseCommand("--max-tools 5 --harness Inspect current releases");
+  if (c.op !== "intake") throw new Error("Expected intake");
+  assert.equal(c.draft, "Inspect current releases"); assert.equal(c.settings.maxToolCalls, 5); assert.equal(c.settings.allowHarness, true);
+  assert.equal(parseCommand("start").op, "intake");
   assert.deepEqual(parseCommand(""), { op: "help" }); assert.deepEqual(parseCommand("resume"), { op: "resume" });
 });
 test("invalid flags and lifecycle arguments are rejected", () => {
-  for (const c of ["--unknown 3 goal", "--budget", "--budget 20 goal", "--mode invalid goal", "status garbage", "--allow-exec --mode web goal"])
+  for (const c of ["--unknown 3 goal", "--budget", "--budget 20 goal", "--mode invalid goal", "status garbage", "--allow-exec --mode web goal", "--harness --mode web goal", "--mode web"])
     assert.throws(() => parseCommand(c));
 });
 test("double dash permits goal text beginning with flags or reserved words", () => {
-  const c = parseCommand("start -- --strange status"); if (c.op !== "start") throw new Error("Expected start");
+  const c = parseCommand("start --mode web -- --strange status"); if (c.op !== "start") throw new Error("Expected start");
   assert.equal(c.config.objective, "--strange status");
+});
+test("intake permits only control tools", () => {
+  for (const tool of ["ask", "todo", "deep_research"]) assert.equal(intakeBlockedReason(tool), undefined);
+  for (const tool of ["read", "web_search", "task", "bash", "eval"]) assert.match(intakeBlockedReason(tool)!, /intake/);
 });
 test("read-only policy blocks product writes, interpreters, goal changes and unknown tools", () => {
   const l = new Ledger(); const m = l.start();
-  for (const tool of ["write", "edit", "ast_edit", "bash", "eval", "goal", "lsp", "unknown_mcp"]) assert.ok(blockedReason(m, tool, {}));
-  for (const tool of ["read", "web_search", "grep", "ast_grep", "todo", "think", "deep_research"]) assert.equal(blockedReason(m, tool, {}), undefined);
-  assert.equal(blockedReason(m, "github", { op: "file_read" }), undefined);
-  for (const op of ["pr_create", "pr_checkout", "pr_push", undefined]) assert.ok(blockedReason(m, "github", { op }));
+  for (const tool of ["write", "edit", "ast_edit", "bash", "eval", "goal", "lsp", "unknown_mcp"]) assert.ok(blockedReason(m, tool, {}, CWD));
+  for (const tool of ["read", "web_search", "grep", "ast_grep", "todo", "think", "deep_research"]) assert.equal(blockedReason(m, tool, {}, CWD), undefined);
+  assert.equal(blockedReason(m, "github", { op: "file_read" }, CWD), undefined);
+  for (const op of ["pr_create", "pr_checkout", "pr_push", undefined]) assert.ok(blockedReason(m, "github", { op }, CWD));
+  assert.ok(blockedReason(m, "write", { path: "autoresearch.sh" }, CWD)); assert.ok(blockedReason(m, "bash", { command: "bash autoresearch.sh" }, CWD));
 });
 test("execution is enabled only by explicit data/mixed consent", () => {
   const l = new Ledger(); const m = l.start({ mode: "mixed", allowExec: true });
-  assert.equal(blockedReason(m, "eval", {}), undefined); assert.ok(blockedReason(m, "write", {}));
+  assert.equal(blockedReason(m, "eval", {}, CWD), undefined); assert.ok(blockedReason(m, "write", { path: "src/app.ts" }, CWD));
+});
+test("harness missions write only the root harness and run only it, synchronously", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "omp-harness-"));
+  try {
+    const m = new Ledger().start({ mode: "data", allowHarness: true });
+    for (const path of ["autoresearch.sh", "./autoresearch.sh", join(cwd, "autoresearch.sh")]) assert.equal(blockedReason(m, "write", { path }, cwd), undefined);
+    for (const command of ["bash autoresearch.sh", "sh ./autoresearch.sh", "  bash autoresearch.sh  "]) assert.equal(blockedReason(m, "bash", { command }, cwd), undefined);
+    assert.equal(blockedReason(m, "bash", { command: "bash autoresearch.sh", cwd: "." }, cwd), undefined);
+    for (const path of ["src/autoresearch.sh", "../autoresearch.sh", "package.json", "~/autoresearch.sh", "local://autoresearch.sh"]) assert.ok(blockedReason(m, "write", { path }, cwd));
+    for (const input of [{ command: "bash autoresearch.sh; rm -rf src" }, { command: "bash autoresearch.sh && npm i" }, { command: "cd /tmp && bash autoresearch.sh" },
+      { command: "bash autoresearch.sh", async: true }, { command: "bash autoresearch.sh", cwd: "/tmp" }, { command: "bash autoresearch.sh", name: "svc" }])
+      assert.ok(blockedReason(m, "bash", input, cwd));
+    for (const tool of ["eval", "edit"]) assert.ok(blockedReason(m, tool, { path: "autoresearch.sh" }, cwd));
+    writeFileSync(join(cwd, "product.ts"), "x"); symlinkSync(join(cwd, "product.ts"), join(cwd, "autoresearch.sh"));
+    assert.ok(blockedReason(m, "write", { path: "autoresearch.sh" }, cwd));
+    rmSync(join(cwd, "autoresearch.sh")); linkSync(join(cwd, "product.ts"), join(cwd, "autoresearch.sh"));
+    assert.ok(blockedReason(m, "write", { path: "autoresearch.sh" }, cwd));
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 test("data mode blocks parent web acquisition", () => {
   const l = new Ledger(); const m = l.start({ mode: "data" });
-  assert.ok(blockedReason(m, "web_search", {})); assert.ok(blockedReason(m, "read", { path: "https://example.org" }));
-  assert.ok(blockedReason(m, "read", { path: "www.example.org" })); assert.ok(blockedReason(m, "github", { op: "file_read" }));
-  assert.equal(blockedReason(m, "read", { path: "data.csv" }), undefined);
+  assert.ok(blockedReason(m, "web_search", {}, CWD)); assert.ok(blockedReason(m, "read", { path: "https://example.org" }, CWD));
+  assert.ok(blockedReason(m, "read", { path: "www.example.org" }, CWD)); assert.ok(blockedReason(m, "github", { op: "file_read" }, CWD));
+  assert.ok(blockedReason(m, "grep", { path: "data.csv;https://example.org/x.json", pattern: "x" }, CWD));
+  assert.equal(blockedReason(m, "read", { path: "data.csv" }, CWD), undefined); assert.equal(blockedReason(m, "grep", { path: "src;data", pattern: "x" }, CWD), undefined);
 });
 test("only explicit native scouts without custom tools can be delegated", () => {
   const l = new Ledger(); const m = l.start();
-  assert.equal(blockedReason(m, "task", { tasks: [{ agent: "scout", task: "Inspect sources" }] }), undefined);
-  for (const p of [{ task: "Code" }, { agent: "build" }, { agent: "scout", tools: [] }, { tasks: [{ agent: "scout" }, { agent: "build" }] }]) assert.ok(blockedReason(m, "task", p));
+  assert.equal(blockedReason(m, "task", { tasks: [{ agent: "scout", task: "Inspect sources" }] }, CWD), undefined);
+  for (const p of [{ task: "Code" }, { agent: "build" }, { agent: "scout", tools: [] }, { tasks: [{ agent: "scout" }, { agent: "build" }] }]) assert.ok(blockedReason(m, "task", p, CWD));
 });
 test("paused missions release the parent tool policy", () => {
-  const l = new Ledger(); const m = l.start(); m.phase = "paused"; assert.equal(blockedReason(m, "write", {}), undefined);
+  const l = new Ledger(); const m = l.start(); m.phase = "paused"; assert.equal(blockedReason(m, "write", {}, CWD), undefined);
 });

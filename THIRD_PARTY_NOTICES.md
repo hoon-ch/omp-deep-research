@@ -1,6 +1,8 @@
 # Third-party provenance and notices
 
-This is an independent OMP-native implementation inspired by the research workflow in [Gajae Code](https://github.com/Yeachan-Heo/gajae-code), not an official Gajae Code or OMP product and not a verbatim port of their runtime. The workflow adaptation acknowledges Gajae's web/data/mixed modes, research-only boundary, durable evidence/run records, critic receipts, and conclusive/inconclusive verdicts.
+This is an independent OMP-native implementation inspired by the research workflow in [Gajae Code](https://github.com/Yeachan-Heo/gajae-code), not an official Gajae Code or OMP product and not a verbatim port of their runtime. The workflow adaptation acknowledges Gajae's web/data/mixed modes, cold intake, `autoresearch.sh` harness contract, research-only boundary, durable evidence/run records, critic receipts, and conclusive/inconclusive verdicts.
+
+`src/critic.ts` adapts the review checklist, read-only role and missing-context fallback of Gajae's `packages/coding-agent/src/defaults/gjc/skills/autoresearch/auto-critic.md` (blob `da6c3f6d1a36d2ba390cfd30bcb69df38315edfe`, commit `1a76298142decaf48b811d480273c703bce2f637`); the response shape was changed to this extension's critic record. Upstream may have changed since.
 
 No Gajae executable, Python kernel owner, state CLI, or vendored runtime code is included. OMP's built-in `/autoresearch` is untouched. OMP public API examples informed the adapter; the host itself is not distributed in this package. See `docs/COMPATIBILITY.md` for reviewed source blobs and verification limits.
 

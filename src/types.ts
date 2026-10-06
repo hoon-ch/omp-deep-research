@@ -4,17 +4,27 @@ export type Phase = "active" | "paused" | "completed" | "cancelled";
 export type Confidence = "low" | "medium" | "high";
 export type RunOutcome = "baseline" | "keep" | "discard" | "crash" | "checks_failed";
 
-export interface MissionConfig {
-  objective: string;
-  mode: Mode;
+/** Operator-chosen settings; they exist before an intake clarifies objective and mode. */
+export interface MissionSettings {
   constraints: string[];
   deliverables: string[];
   maxContinuations: number;
   maxToolCalls: number;
   maxMinutes: number;
   allowExec: boolean;
+  allowHarness: boolean;
   criticModel?: string;
   primaryModel?: string;
+}
+export interface MissionConfig extends MissionSettings {
+  objective: string;
+  mode: Mode;
+}
+export interface Intake {
+  id: string;
+  startedAt: string;
+  draft: string;
+  settings: MissionSettings;
 }
 export interface Pass {
   id: string;
@@ -111,6 +121,7 @@ export interface Mission extends MissionConfig {
   notes: string;
 }
 export type EventType =
+  | "intake_started" | "intake_cancelled"
   | "mission_created" | "pass_resumed" | "pass_paused" | "mission_cancelled" | "mission_cleared"
   | "tool_counted" | "receipt_recorded" | "continuation_requested"
   | "evidence_added" | "run_logged" | "run_flagged" | "notes_updated"
@@ -125,11 +136,18 @@ export interface LedgerEvent {
   requestId?: string;
   requestHash?: string;
 }
-export interface ResearchState { mission?: Mission; events: LedgerEvent[]; }
+export interface ResearchState { mission?: Mission; intake?: Intake; events: LedgerEvent[]; }
 export interface SessionEntry { type: string; customType?: string; data?: unknown; }
+export interface MissionInput {
+  objective: string;
+  mode: Mode;
+  constraints: string[];
+  deliverables: string[];
+}
 export interface ToolInput {
-  op: "read" | "evidence" | "run" | "flag_run" | "notes" | "critic" | "verdict" | "export";
-  view?: "summary" | "full" | "receipts";
+  op: "read" | "start" | "evidence" | "run" | "flag_run" | "notes" | "critic" | "verdict" | "export";
+  view?: "summary" | "full" | "receipts" | "critic";
+  mission?: MissionInput;
   limit?: number;
   offset?: number;
   requestId?: string;

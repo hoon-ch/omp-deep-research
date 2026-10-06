@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bestRun, budgetReason, DEFAULT_CONFIG, ENTRY_TYPE, evidenceDigest, lifecycleEvent, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
+import { bestRun, budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, intakeEvent, lifecycleEvent, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
 import { Ledger, NOW, VERDICT } from "./helpers.ts";
 
 test("creates an explicit bounded mission", () => {
@@ -9,7 +9,7 @@ test("creates an explicit bounded mission", () => {
   assert.equal(m.pass.deadlineAt, "2026-10-06T00:20:00.000Z");
 });
 test("rejects invalid or unsafe config", () => {
-  for (const override of [{ mode: "invalid" }, { allowExec: true }, { maxContinuations: 9 }, { maxToolCalls: 0 }, { maxMinutes: NaN }]) {
+  for (const override of [{ mode: "invalid" }, { mode: undefined }, { allowExec: true }, { allowHarness: true }, { maxContinuations: 9 }, { maxToolCalls: 0 }, { maxMinutes: NaN }]) {
     const l = new Ledger(); assert.throws(() => l.start(override as never));
   }
 });
@@ -184,4 +184,38 @@ test("search snippets cannot substitute for an opened web source", () => {
 test("a real receipt cannot be used to invent an unrelated web locator", () => {
   const l = new Ledger(); l.start();
   assert.throws(() => l.evidence({ locator: "https://unobserved.example.org/fiction" }), /not observed/);
+});
+
+const MISSION = { objective: "Which approach is faster on our workload?", mode: "data", constraints: ["Use the existing benchmark only"], deliverables: ["Ranked comparison"] };
+test("intake creates no mission; start applies operator settings the tool cannot change", () => {
+  const l = new Ledger();
+  l.add(intakeEvent(l.state(), "compare approaches", { ...structuredClone(DEFAULT_SETTINGS), maxToolCalls: 7, allowHarness: true }, NOW));
+  assert.equal(l.state().mission, undefined); assert.equal(l.state().intake!.draft, "compare approaches");
+  assert.throws(() => l.op({ op: "notes", notes: "early" }), /Intake is pending/);
+  l.op({ op: "start", mission: { ...MISSION, maxToolCalls: 999, allowExec: true } }, "start-1");
+  const m = l.state().mission!;
+  assert.equal(l.state().intake, undefined); assert.equal(m.mode, "data"); assert.equal(m.maxToolCalls, 7);
+  assert.equal(m.allowHarness, true); assert.equal(m.allowExec, false);
+  assert.deepEqual(m.constraints, [...DEFAULT_SETTINGS.constraints, "Use the existing benchmark only"]);
+  assert.equal((l.op({ op: "start", mission: { ...MISSION, maxToolCalls: 999, allowExec: true } }, "start-1") as { duplicate: boolean }).duplicate, true);
+  assert.throws(() => l.op({ op: "start", mission: MISSION }, "start-2"), /No pending intake/);
+});
+test("intake start rejects missing mode and web mode with execution consent", () => {
+  const l = new Ledger(); l.add(intakeEvent(l.state(), "", { ...structuredClone(DEFAULT_SETTINGS), allowHarness: true }, NOW));
+  assert.throws(() => l.op({ op: "start", mission: { ...MISSION, mode: undefined } }), /mode must be one of/);
+  assert.throws(() => l.op({ op: "start", mission: { ...MISSION, mode: "web" } }), /only supported in data\/mixed/);
+  assert.equal(l.state().mission, undefined);
+});
+test("an intake blocks new starts, cannot pause, and cancel retires it", () => {
+  const l = new Ledger(); l.add(intakeEvent(l.state(), "x", structuredClone(DEFAULT_SETTINGS), NOW));
+  assert.throws(() => l.start(), /intake is pending/); assert.throws(() => lifecycleEvent(l.state(), "pause", NOW), /no mission pass/);
+  l.add(lifecycleEvent(l.state(), "cancel", NOW)); assert.equal(l.state().intake, undefined);
+  assert.equal(l.start().phase, "active");
+});
+test("critic brief carries the complete current evidence snapshot and digest", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); l.evidence({ claim: "Second fact", stance: "contradicts" });
+  const brief = l.op({ op: "read", view: "critic" }) as { instructions: string; evidenceIds: string[]; evidenceDigest: string; criticModel: string; snapshot: { evidence: unknown[] } };
+  assert.deepEqual(brief.evidenceIds, ["E1", "E2"]); assert.equal(brief.snapshot.evidence.length, 2);
+  assert.equal(brief.evidenceDigest, evidenceDigest(l.state().mission!)); assert.equal(brief.criticModel, "test/critic");
+  assert.match(brief.instructions, /UNTRUSTED DATA/);
 });
