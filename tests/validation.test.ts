@@ -3,18 +3,57 @@ import assert from "node:assert/strict";
 import { linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalUrl, hash, parseMetrics } from "../src/validation.ts";
-import { parseCommand, tokenize } from "../src/command.ts";
+import { canonicalUrl, hash, parseHarnessOutput } from "../src/validation.ts";
+import { parseCommand, specConfig, tokenize } from "../src/command.ts";
+import { DEFAULT_SETTINGS } from "../src/engine.ts";
 import { blockedReason, intakeBlockedReason } from "../src/policy.ts";
+import { buildReceipt } from "../src/receipts.ts";
+import { parseSpec } from "../src/spec.ts";
 import { Ledger } from "./helpers.ts";
 const CWD = "/research-root";
 
 test("parses finite metrics including exponent and negative values", () => {
-  assert.deepEqual({ ...parseMetrics("METRIC score=1e-3\nMETRIC loss=-.5\nother output").metrics }, { score: .001, loss: -.5 });
+  assert.deepEqual({ ...parseHarnessOutput("METRIC score=1e-3\nMETRIC loss=-.5\nother output").metrics }, { score: .001, loss: -.5 });
 });
 test("malformed, duplicate, NaN and infinite metrics invalidate the result", () => {
-  for (const s of ["METRIC score=NaN", "METRIC x=Infinity", "METRIC x=1e999", "METRIC x=1\nMETRIC x=2", "METRIC score=nope"])
-    assert.ok(parseMetrics(s).error);
+  for (const s of ["METRIC score=NaN", "METRIC x=Infinity", "METRIC x=1e999", "METRIC x=1\nMETRIC x=2", "METRIC score=nope", "METRIC __proto__=1"])
+    assert.ok(parseHarnessOutput(s).error);
+});
+test("ASI lines are typed learning data and never invalidate metrics", () => {
+  const p = parseHarnessOutput("ASI cache=warm\nASI threads=8\nASI jit=false\nASI __proto__=x\nASI bad line\nASI cache=cold\nMETRIC ms=4");
+  assert.deepEqual({ ...p.asi }, { cache: "warm", threads: 8, jit: false }); assert.equal(p.error, undefined); assert.equal(p.metrics.ms, 4);
+});
+test("spec intake requires an explicit mode and reads objective, sections and metric", () => {
+  const spec = "# Compare JSON parsers\n\n- autoresearch-mode: data\ndeep-research-metric: ms\ndeep-research-metric-direction: lower\n\n## Constraints\n- No product edits\n\n## Acceptance criteria\n- [ ] Ranked table\n- [x] Caveats listed\n";
+  assert.deepEqual(parseSpec(spec, "s.md"), { objective: "Compare JSON parsers", mode: "data", constraints: ["No product edits"],
+    deliverables: ["Ranked table", "Caveats listed"], metric: { name: "ms", direction: "lower" } });
+  assert.throws(() => parseSpec("# Goal\n## Deliverables\n- x", "s.md"), /must declare its mode/);
+  assert.throws(() => parseSpec("deep-research-mode: web\ndeep-research-metric: ms", "s.md"), /both/);
+  const source = { path: "/s.md", sha256: "a".repeat(64) };
+  assert.throws(() => specConfig(parseSpec(spec, "s.md"), structuredClone(DEFAULT_SETTINGS), source, "web"), /contradicts/);
+  const config = specConfig(parseSpec(spec, "s.md"), { ...structuredClone(DEFAULT_SETTINGS), allowHarness: true }, source);
+  assert.equal(config.mode, "data"); assert.equal(config.spec!.sha256, source.sha256); assert.ok(config.constraints.includes("No product edits"));
+});
+test("operator commands parse spec, mode change, metric and usage budgets", () => {
+  const spec = parseCommand("--spec plan.md --harness --max-tokens 50000 --max-cost 2.5");
+  if (spec.op !== "spec") throw new Error("Expected spec");
+  assert.equal(spec.path, "plan.md"); assert.equal(spec.settings.maxTokens, 50000); assert.equal(spec.settings.maxCost, 2.5);
+  assert.deepEqual(parseCommand("mode mixed"), { op: "mode", mode: "mixed" });
+  const metric = parseCommand("--mode data --metric ms --direction lower Compare");
+  if (metric.op !== "start") throw new Error("Expected start");
+  assert.deepEqual(metric.config.metric, { name: "ms", direction: "lower" });
+  for (const c of ["--spec a.md extra words", "--metric ms --mode data x", "--mode data --metric ms --direction up x", "mode web extra", "--max-cost 0 --mode web x"])
+    assert.throws(() => parseCommand(c));
+});
+test("task receipts record pinned or reported models and spawned agent ids", () => {
+  const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : undefined;
+  const r = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,
+    input: { context: "c", tasks: [{ agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }] },
+    content: [{ type: "text", text: "Spawned 2 background agents using scout.\n- `Crit` (job `j1`)\n- `Crit-2` (job `j2`)" }] }, resolve);
+  assert.deepEqual(r.models, ["test/critic"]); assert.deepEqual(r.agentIds, ["Crit", "Crit-2"]);
+  const blocking = buildReceipt({ toolName: "task", toolCallId: "t2", isError: false, input: { agent: "scout" }, content: [{ type: "text", text: "done" }],
+    details: { results: [{ id: "Rev", resolvedModel: "test/critic:high" }] } }, resolve);
+  assert.deepEqual(blocking.models, ["test/critic"]); assert.deepEqual(blocking.agentIds, ["Rev"]);
 });
 test("canonical URL strips tracking only, preserving meaningful parameters", () => {
   assert.equal(canonicalUrl("https://EXAMPLE.org/p?b=2&utm_source=x&a=1#part"), "https://example.org/p?a=1&b=2");

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bestRun, budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, intakeEvent, lifecycleEvent, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
+import { budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, resetEvent, restore, startEvent } from "../src/engine.ts";
+import { bestRun, effectToNoise } from "../src/runs.ts";
 import { Ledger, NOW, VERDICT } from "./helpers.ts";
 
 test("creates an explicit bounded mission", () => {
@@ -129,16 +130,44 @@ test("flagging invalid runs recomputes best and later comparisons", () => {
   l.op({ op: "run", run: { label: "Bench", hypothesis: "Compare", receiptId: r.id, primaryMetric: "score", direction: "lower" } });
   assert.equal(l.state().mission!.runs.at(-1)!.outcome, "keep");
 });
-test("cannot change primary metric or optimization direction mid-mission", () => {
-  const l = new Ledger(); l.start({ mode: "data" }); const r = l.receipt({ metrics: { score: 3 } });
+test("the metric contract is fixed within a segment and can change only in a new segment", () => {
+  const l = new Ledger(); l.start({ mode: "data" }); const r = l.receipt({ metrics: { score: 3, ms: 9 } });
   const run = { label: "x", hypothesis: "x", receiptId: r.id, primaryMetric: "score", direction: "higher" };
-  l.op({ op: "run", run }); assert.throws(() => l.op({ op: "run", run: { ...run, direction: "lower" } }), /cannot change/);
+  l.op({ op: "run", run }); assert.throws(() => l.op({ op: "run", run: { ...run, receiptId: l.receipt({ metrics: { score: 1 } }).id, direction: "lower" } }), /new segment/);
+  l.op({ op: "segment", segment: { reason: "Switched to latency workload", metric: { name: "ms", direction: "lower" } } });
+  const r2 = l.receipt({ metrics: { ms: 9 } });
+  l.op({ op: "run", run: { label: "y", hypothesis: "y", receiptId: r2.id } });
+  const m = l.state().mission!;
+  assert.deepEqual(m.runs.map(x => [x.segment, x.primaryMetric, x.outcome]), [[0, "score", "baseline"], [1, "ms", "baseline"]]);
+  assert.equal(bestRun(m)!.id, "R2"); assert.equal(bestRun(m, 0)!.id, "R1");
 });
-test("configured critic must review the current complete evidence snapshot", () => {
+test("a declared metric is enforced from the first run", () => {
+  const l = new Ledger(); l.start({ mode: "data", metric: { name: "ms", direction: "lower" } });
+  assert.throws(() => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { score: 1 } }).id, primaryMetric: "score", direction: "higher" } }), /measures ms/);
+  l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { ms: 5 }, asi: { cache: "warm" } }).id } });
+  const run = l.state().mission!.runs[0]!;
+  assert.equal(run.outcome, "baseline"); assert.deepEqual(run.asi, { cache: "warm" });
+});
+test("effect-to-noise needs three valid runs with spread and ignores flagged runs", () => {
+  const l = new Ledger(); l.start({ mode: "data", metric: { name: "ms", direction: "lower" } });
+  const run = (ms: number) => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { ms } }).id } });
+  run(100); run(90); assert.equal(effectToNoise(l.state().mission!), null);
+  run(80); // values 100, 90, 80: median 90, MAD 10, |80 - 100| / 10 = 2
+  assert.equal(effectToNoise(l.state().mission!), 2);
+  l.op({ op: "flag_run", runId: "R3", reason: "Cache was warm" }); assert.equal(effectToNoise(l.state().mission!), null);
+});
+test("configured critic must be host-attested and review the current complete evidence snapshot", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
   assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /critic receipt/);
-  const r = l.receipt({ tool: "task" });
-  const critic = { evaluator: "test/critic", receiptId: r.id, evidenceIds: ["E1"], assessment: "pass", summary: "Source supports claim", concerns: [] };
+  const unpinned = l.receipt({ tool: "task", models: ["test/other"], agentIds: ["Crit"] });
+  const base = { evaluator: "test/critic", evidenceIds: ["E1"], assessment: "pass", summary: "Source supports claim", concerns: [] };
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: unpinned.id } }), /spawnReceiptId/);
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: unpinned.id, spawnReceiptId: unpinned.id } }), /did not pin test\/critic/);
+  const spawn = l.receipt({ tool: "task", models: ["test/critic"], agentIds: ["Crit"] });
+  const stranger = l.receipt({ tool: "read", sourceRefs: ["agent://Other"] });
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: stranger.id, spawnReceiptId: spawn.id } }), /spawning task result or a read/);
+  const response = l.receipt({ tool: "read", sourceRefs: ["agent://Crit"] });
+  const critic = { ...base, receiptId: response.id, spawnReceiptId: spawn.id };
   l.op({ op: "critic", critic });
   l.evidence({ claim: "New evidence" });
   assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /CURRENT/);
@@ -165,11 +194,38 @@ test("source receipts are paginated newest-first", () => {
   assert.equal(p.receipts.length, 12); assert.equal(p.nextOffset, 12); assert.equal(p.total, 15);
 });
 test("budgets stop new acquisition but do not erase state", () => {
-  const l = new Ledger(); l.start({ maxToolCalls: 1 });
+  const l = new Ledger(); l.start({ maxToolCalls: 1, maxTokens: 5000, maxCost: 0.5 });
   assert.equal(budgetReason(l.state().mission!, Date.parse(NOW)), undefined);
+  l.add(makeEvent(l.state().mission!.id, "usage_recorded", { tokens: 4000, cost: 0.6 }, NOW));
+  assert.match(budgetReason(l.state().mission!, Date.parse(NOW))!, /cost budget/);
+  l.add(makeEvent(l.state().mission!.id, "usage_recorded", { tokens: 1000, cost: 0 }, NOW));
+  assert.match(budgetReason(l.state().mission!, Date.parse(NOW))!, /token budget/);
   l.add(makeEvent(l.state().mission!.id, "tool_counted", { toolCallId: "x" }, NOW));
   assert.match(budgetReason(l.state().mission!, Date.parse(NOW))!, /tool budget/);
   assert.match(budgetReason(l.state().mission!, Date.parse(NOW) + 21 * 60_000)!, /wall-clock/);
+  l.add(lifecycleEvent(l.state(), "pause", NOW)); l.add(lifecycleEvent(l.state(), "resume", NOW));
+  assert.equal(budgetReason(l.state().mission!, Date.parse(NOW)), undefined);
+});
+test("a conclusive verdict must confront contradicting evidence", () => {
+  const l = new Ledger(); l.start(); l.evidence(); l.evidence({ claim: "B outperforms A", stance: "contradicts" });
+  assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /Contradicting evidence E2/);
+  assert.throws(() => l.op({ op: "verdict", verdict: { ...VERDICT, caveats: ["E22 is unrelated"] } }), /E2/);
+  l.op({ op: "verdict", verdict: { ...VERDICT, caveats: ["E2 measured a different workload"] } });
+  assert.equal(l.state().mission!.phase, "completed");
+});
+test("mode changes are operator events that keep evidence and respect execution consent", () => {
+  const l = new Ledger(); l.start({ mode: "mixed", allowHarness: true }); l.evidence();
+  assert.throws(() => modeEvent(l.state(), "web", NOW), /only supported in data\/mixed/);
+  assert.throws(() => modeEvent(l.state(), "mixed", NOW), /already/);
+  l.add(modeEvent(l.state(), "data", NOW));
+  const m = l.state().mission!; assert.equal(m.mode, "data"); assert.equal(m.evidence.length, 1);
+  assert.throws(() => l.evidence({ claim: "Another web fact" }), /not allowed in data mode/);
+});
+test("ledger reset retires unreadable history without deleting it", () => {
+  const l = new Ledger(); l.start(); l.entries.push({ type: "custom", customType: ENTRY_TYPE, data: { schemaVersion: 99 } });
+  assert.throws(() => l.state(), /Unsupported/);
+  l.add(resetEvent("operator", NOW)); assert.equal(l.state().mission, undefined);
+  assert.equal(l.start().phase, "active");
 });
 test("digest changes with evidence, not unrelated source acquisition", () => {
   const l = new Ledger(); l.start(); l.evidence(); const d = evidenceDigest(l.state().mission!);

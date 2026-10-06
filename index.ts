@@ -1,54 +1,95 @@
 import { createHash } from "node:crypto";
-import { budgetReason, ENTRY_TYPE, intakeEvent, lifecycleEvent, makeEvent, prepareOperation, restore, startEvent, summary } from "./src/engine.ts";
-import { HELP, parseCommand } from "./src/command.ts";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import { budgetReason, ENTRY_TYPE, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, startEvent, summary } from "./src/engine.ts";
+import { HELP, parseCommand, specConfig } from "./src/command.ts";
 import { blockedReason, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY } from "./src/policy.ts";
+import { buildReceipt, taskUsage } from "./src/receipts.ts";
 import { exportReport } from "./src/report.ts";
+import { runTable } from "./src/runs.ts";
 import { toolSchema } from "./src/schema.ts";
-import { hash, object, parseMetrics, ResearchError } from "./src/validation.ts";
+import { parseSpec } from "./src/spec.ts";
+import { object, ResearchError } from "./src/validation.ts";
 import type { HostAPI, HostContext, ToolResult } from "./src/host.ts";
-import type { LedgerEvent, Receipt } from "./src/types.ts";
+import type { LedgerEvent, MissionSettings, ResearchState, SessionEntry } from "./src/types.ts";
 
 const modelId = (ctx: HostContext) => ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown-host-model";
 const isMain = (ctx: HostContext) => ctx.agent.kind === "main";
 const messageOf = (e: unknown) => e instanceof Error ? e.message : String(e);
+const STATUS_KEY = "omp-deep-research";
+
+type Loaded = { state: ResearchState; error?: undefined } | { state?: undefined; error: string };
 
 /** OMP loads this default factory; all mission state comes from the active branch. */
 export default function deepResearch(pi: HostAPI): void {
   pi.setLabel("OMP Deep Research");
-  const state = (ctx: HostContext) => restore(ctx.sessionManager.getBranch());
+  // Replay is cached per active branch tip: the same last research event id implies the same research history.
+  let cache: { key: string; loaded: Loaded } | undefined;
+  function load(ctx: HostContext): Loaded {
+    const entries = researchEntries(ctx.sessionManager.getBranch());
+    const last: SessionEntry | undefined = entries.at(-1);
+    const eventId = last && typeof last.data === "object" && last.data && "id" in last.data ? String(last.data.id) : "";
+    const key = `${entries.length}:${last?.id ?? ""}:${eventId}`;
+    if (cache?.key === key) return cache.loaded;
+    let loaded: Loaded;
+    try { loaded = { state: restore(entries) }; } catch (e) { loaded = { error: messageOf(e) }; }
+    cache = { key, loaded };
+    return loaded;
+  }
+  /** Strict read for operations that must not proceed on an unreadable ledger. */
+  function state(ctx: HostContext): ResearchState {
+    const l = load(ctx);
+    if (l.error !== undefined) throw new ResearchError(`Research ledger unreadable: ${l.error}. Run /deep-research reset-ledger to retire it (history is kept).`);
+    return l.state;
+  }
   const persist = (event: LedgerEvent) => pi.appendEntry(ENTRY_TYPE, event);
-  function notify(ctx: HostContext, message: string, kind: "info" | "warning" | "error" = "info") {
+  /** UI when available; print/json modes have no UI, so command output goes to stderr instead of vanishing. */
+  function output(ctx: HostContext, message: string, kind: "info" | "warning" | "error" = "info") {
     if (ctx.hasUI) ctx.ui.notify(message, kind);
+    else process.stderr.write(`${kind === "info" ? "" : `[deep-research ${kind}] `}${message}\n`);
   }
   function refresh(ctx: HostContext) {
     if (!isMain(ctx) || !ctx.hasUI) return;
-    const s = state(ctx); const m = s.mission;
-    ctx.ui.setStatus("omp-deep-research", s.intake ? "Research intake · clarify goal, constraints, deliverables, mode"
-      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.continuations}/${m.maxContinuations} nudges` : undefined);
+    const l = load(ctx);
+    if (l.error !== undefined) {
+      ctx.ui.setStatus(STATUS_KEY, "Research ledger unreadable · /deep-research reset-ledger"); ctx.ui.setWidget(STATUS_KEY, undefined); return;
+    }
+    const s = l.state; const m = s.mission;
+    const usage = m && (m.maxTokens !== undefined || m.maxCost !== undefined)
+      ? ` · ${m.pass.tokens}${m.maxTokens ? `/${m.maxTokens}` : ""} tok${m.maxCost ? ` · $${m.pass.cost.toFixed(2)}/$${m.maxCost}` : ""}` : "";
+    ctx.ui.setStatus(STATUS_KEY, s.intake ? "Research intake · clarify goal, constraints, deliverables, mode"
+      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.continuations}/${m.maxContinuations} nudges${usage}` : undefined);
+    const showRuns = m && m.mode !== "web" && (m.phase === "active" || m.phase === "paused") && m.runs.length > 0;
+    ctx.ui.setWidget(STATUS_KEY, showRuns ? runTable(m, 8) : undefined, { placement: "aboveEditor" });
   }
   const pause = (ctx: HostContext, reason: string) => {
-    const s = state(ctx);
-    if (s.mission?.phase === "active") { persist(lifecycleEvent(s, "pause", undefined, reason)); refresh(ctx); }
+    const l = load(ctx);
+    if (l.state?.mission?.phase === "active") { persist(lifecycleEvent(l.state, "pause", undefined, reason)); refresh(ctx); }
   };
+  const activeMission = (ctx: HostContext) => { const m = load(ctx).state?.mission; return m?.phase === "active" ? m : undefined; };
   for (const name of ["session_start", "session_switch", "session_branch", "session_tree", "session_compact"] as const) pi.on(name, (_event, ctx) => refresh(ctx));
 
   pi.on("before_agent_start", (event, ctx) => {
     if (!isMain(ctx)) return;
-    const s = state(ctx);
+    const s = load(ctx).state;
     // External evidence is never interpolated into the system prompt.
-    if (s.intake) return { systemPrompt: [...event.systemPrompt, INTAKE_POLICY] };
-    if (s.mission?.phase === "active") return { systemPrompt: [...event.systemPrompt, SYSTEM_POLICY] };
+    if (s?.intake) return { systemPrompt: [...event.systemPrompt, INTAKE_POLICY] };
+    if (s?.mission?.phase === "active") return { systemPrompt: [...event.systemPrompt, SYSTEM_POLICY] };
   });
   pi.on("session.compacting", (_event, ctx) => {
     if (!isMain(ctx)) return;
-    const s = state(ctx);
-    if (!s.intake && s.mission?.phase !== "active") return;
+    const s = load(ctx).state;
+    if (!s?.intake && s?.mission?.phase !== "active") return;
     return { context: ["OMP Deep Research state (intake or mission) is stored in custom session entries. Call deep_research(op='read') after compaction; do not reconstruct evidence from memory."] };
   });
 
   pi.on("tool_call", (event, ctx) => {
     if (!isMain(ctx)) return;
-    const s = state(ctx); const m = s.mission;
+    const l = load(ctx);
+    // Fail closed: if the ledger cannot be read, the research policy state is unknown.
+    if (l.error !== undefined) return event.toolName === "deep_research" ? undefined
+      : { block: true, reason: `Deep Research ledger unreadable (${l.error}). Ask the user to run /deep-research reset-ledger.` };
+    const s = l.state; const m = s.mission;
     if (s.intake) {
       const reason = intakeBlockedReason(event.toolName);
       return reason ? { block: true, reason } : undefined;
@@ -65,18 +106,20 @@ export default function deepResearch(pi: HostAPI): void {
   });
   pi.on("tool_result", (event: ToolResult, ctx) => {
     if (!isMain(ctx) || !isAcquisition(event.toolName)) return;
-    const s = state(ctx); const m = s.mission;
-    if (!m || m.phase !== "active" || !m.pass.toolCalls.includes(event.toolCallId) || m.receipts.some(r => r.id === event.toolCallId)) return;
-    const output = event.content.filter(c => c.type === "text").map(c => c.text ?? "").join("\n");
-    const parsed = parseMetrics(output);
-    const sourceRefs = [...new Set([
-      ...(typeof event.input.path === "string" ? [event.input.path] : []),
-      ...(output.match(/https?:\/\/[^\s<>"'\]\)]+/g) ?? []),
-    ])].slice(0, 40);
-    const receipt: Receipt = { id: event.toolCallId, tool: event.toolName, at: new Date().toISOString(), inputHash: hash(event.input),
-      outputHash: createHash("sha256").update(output).digest("hex"), preview: output.slice(0, 2400), isError: event.isError,
-      metrics: parsed.metrics, ...(parsed.error ? { metricError: parsed.error } : {}), sourceRefs };
-    persist(makeEvent(m.id, "receipt_recorded", { receipt }));
+    const m = activeMission(ctx);
+    if (!m || !m.pass.toolCalls.includes(event.toolCallId) || m.receipts.some(r => r.id === event.toolCallId)) return;
+    persist(makeEvent(m.id, "receipt_recorded", { receipt: buildReceipt(event, spec => ctx.models.resolve(spec)) }));
+    const child = event.toolName === "task" ? taskUsage(event.details) : undefined;
+    if (child && (child.tokens || child.cost)) persist(makeEvent(m.id, "usage_recorded", { source: event.toolCallId, ...child }));
+    refresh(ctx);
+  });
+  pi.on("message_end", (event, ctx) => {
+    if (!isMain(ctx) || event.message.role !== "assistant") return;
+    const m = activeMission(ctx); const usage = event.message.usage;
+    if (!m || (m.maxTokens === undefined && m.maxCost === undefined) || !usage) return;
+    const tokens = typeof usage.totalTokens === "number" && Number.isFinite(usage.totalTokens) && usage.totalTokens > 0 ? Math.round(usage.totalTokens) : 0;
+    const cost = typeof usage.cost?.total === "number" && Number.isFinite(usage.cost.total) && usage.cost.total > 0 ? usage.cost.total : 0;
+    if (tokens || cost) { persist(makeEvent(m.id, "usage_recorded", { source: "assistant", tokens, cost })); refresh(ctx); }
   });
 
   pi.on("agent_end", (event, ctx) => {
@@ -86,8 +129,8 @@ export default function deepResearch(pi: HostAPI): void {
   });
   pi.on("session_stop", (event, ctx) => {
     if (!isMain(ctx)) return;
-    const s = state(ctx); const m = s.mission;
-    if (!m || m.phase !== "active") return;
+    const m = activeMission(ctx);
+    if (!m) return;
     if (event.signal.aborted || ["aborted", "error"].includes(event.last_assistant_message?.stopReason ?? "")) {
       pause(ctx, "Interrupted or failed; automatic continuation is disabled until explicit resume."); return;
     }
@@ -95,7 +138,7 @@ export default function deepResearch(pi: HostAPI): void {
     const exhausted = budgetReason(m);
     if (exhausted || m.pass.continuations >= m.maxContinuations) {
       pause(ctx, exhausted ?? "Continuation budget exhausted before a verdict was saved.");
-      notify(ctx, "Research paused at its budget. Evidence is saved; use /deep-research resume or export.", "warning"); return;
+      output(ctx, "Research paused at its budget. Evidence is saved; use /deep-research resume or export.", "warning"); return;
     }
     const stopId = `${event.session_id}:${m.pass.id}:${event.turn_id}`;
     if (m.pass.stopIds.includes(stopId)) return;
@@ -109,7 +152,7 @@ export default function deepResearch(pi: HostAPI): void {
 
   pi.registerTool({
     name: "deep_research", label: "Deep Research", loadMode: "essential", approval: "write",
-    description: "Operate the user's Deep Research intake or mission: start a mission after a /deep-research intake clarified objective/mode/constraints/deliverables; read summary/full/receipts/critic brief; record source-linked evidence, observed metric runs, flags, notes, critic receipts and conclusive/inconclusive verdicts; explicitly export local reports. Only the user /deep-research command opens an intake or starts/pauses/resumes/clears missions, and budgets/execution consent are never tool-controlled. No network or code execution occurs inside this tool.",
+    description: "Operate the user's Deep Research intake or mission: start a mission after a /deep-research intake clarified objective/mode/constraints/deliverables; read summary/full/receipts/runs, the critic brief or the iterate (next-experiment) brief; record source-linked evidence, harness segments, observed metric runs, flags, notes, critic receipts and conclusive/inconclusive verdicts; explicitly export local reports. Only the user /deep-research command opens an intake or starts/pauses/resumes/clears missions, and budgets/execution consent are never tool-controlled. No network or code execution occurs inside this tool.",
     parameters: toolSchema(pi.zod),
     async execute(toolCallId, input, signal, _onUpdate, ctx) {
       try {
@@ -130,43 +173,72 @@ export default function deepResearch(pi: HostAPI): void {
       }
     },
   });
+  /** Resolves the operator's critic selector to the host's canonical `provider/id`; never substitutes. */
+  function resolveCritic(ctx: HostContext, settings: MissionSettings) {
+    if (!settings.criticModel) return;
+    const model = ctx.models.resolve(settings.criticModel);
+    if (!model) throw new ResearchError(`Configured critic is unavailable: ${settings.criticModel}. No model substitution was made.`);
+    settings.criticModel = `${model.provider}/${model.id}`;
+    if (settings.criticModel === modelId(ctx)) throw new ResearchError("Select a critic model distinct from the main research model");
+  }
   pi.registerCommand("deep-research", {
-    description: "Evidence-driven web/data/mixed research; status, pause, resume, cancel, clear, export",
+    description: "Evidence-driven web/data/mixed research; intake, spec, harness, status, runs, mode, pause, resume, cancel, clear, export",
     async handler(args, ctx) {
       try {
         if (!isMain(ctx)) throw new ResearchError("Start research in the main OMP session");
         const command = parseCommand(args, modelId(ctx));
-        if (command.op === "help") { notify(ctx, HELP); return; }
-        if (command.op === "status") { notify(ctx, JSON.stringify(summary(state(ctx)), null, 2)); return; }
-        if (command.op === "export") { notify(ctx, JSON.stringify(exportReport(state(ctx), ctx.cwd), null, 2)); return; }
+        if (command.op === "help") { output(ctx, HELP); return; }
+        if (command.op === "reset-ledger") {
+          const l = load(ctx);
+          if (l.state?.intake || (l.state?.mission && ["active", "paused"].includes(l.state.mission.phase)))
+            throw new ResearchError("The ledger is readable and has open work; use cancel or clear instead of reset-ledger");
+          persist(resetEvent(l.error ?? "Operator reset")); refresh(ctx); output(ctx, "Research ledger reset. Earlier events stay in the session history but are no longer replayed."); return;
+        }
+        if (command.op === "status") { output(ctx, JSON.stringify(summary(state(ctx)), null, 2)); return; }
+        if (command.op === "runs") {
+          const m = state(ctx).mission;
+          if (!m) throw new ResearchError("No mission");
+          output(ctx, runTable(m, 40).join("\n")); return;
+        }
+        if (command.op === "export") { output(ctx, JSON.stringify(exportReport(state(ctx), ctx.cwd), null, 2)); return; }
+        if (command.op === "mode") {
+          persist(modeEvent(state(ctx), command.mode)); refresh(ctx);
+          output(ctx, `Mission mode set to ${command.mode}. Existing evidence is kept; new evidence and tools follow the new mode.`); return;
+        }
         if (["pause", "cancel", "clear"].includes(command.op)) {
           const before = state(ctx);
           const busy = before.intake !== undefined || before.mission?.phase === "active";
           persist(lifecycleEvent(before, command.op as "pause" | "cancel" | "clear"));
           if (busy) ctx.abort();
-          refresh(ctx); notify(ctx, `Research ${command.op} saved. Session ledger retained.`); return;
+          refresh(ctx); output(ctx, `Research ${command.op} saved. Session ledger retained.`); return;
         }
+        const runsTurn = command.op === "start" || command.op === "spec" || command.op === "intake" || command.op === "resume";
+        // OMP 18.6.1 print mode queues a command's follow-up turn but exits without running it (and never flushes the session).
+        if (runsTurn && (ctx.mode === "print" || ctx.mode === "json"))
+          throw new ResearchError("omp -p cannot run a mission started by a command; use interactive omp or `omp --mode rpc --no-ui` (send the command as a prompt and wait for session_settled)");
+        if (command.op === "intake" && !ctx.hasUI) throw new ResearchError("An intake needs an interactive UI to ask clarifying questions; headless runs must use --mode or --spec");
         await ctx.waitForIdle();
-        if (command.op === "start" || command.op === "intake") {
+        if (command.op === "start" || command.op === "intake" || command.op === "spec") {
           const settings = command.op === "start" ? command.config : command.settings;
-          if (settings.criticModel) {
-            const model = ctx.models.resolve(settings.criticModel);
-            if (!model) throw new ResearchError(`Configured critic is unavailable: ${settings.criticModel}. No model substitution was made.`);
-            settings.criticModel = `${model.provider}/${model.id}`;
-            if (settings.criticModel === modelId(ctx)) throw new ResearchError("Select a critic model distinct from the main research model");
-          }
-          persist(command.op === "start" ? startEvent(state(ctx), command.config) : intakeEvent(state(ctx), command.draft, command.settings));
-          if (settings.allowExec) notify(ctx, "Execution enabled by --allow-exec: bash/eval can modify your machine. This is not an OS sandbox.", "warning");
-          else if (settings.allowHarness) notify(ctx, "Harness enabled by --harness: the agent may write and run ./autoresearch.sh, which is arbitrary code. This is not an OS sandbox.", "warning");
+          resolveCritic(ctx, settings);
+          if (command.op === "spec") {
+            const path = resolvePath(ctx.cwd, command.path);
+            let text: string;
+            try { text = readFileSync(path, "utf8"); } catch (e) { throw new ResearchError(`Cannot read spec ${command.path}: ${messageOf(e)}`); }
+            const config = specConfig(parseSpec(text, command.path), command.settings, { path, sha256: createHash("sha256").update(text).digest("hex") }, command.mode);
+            persist(startEvent(state(ctx), config));
+          } else persist(command.op === "start" ? startEvent(state(ctx), command.config) : intakeEvent(state(ctx), command.draft, command.settings));
+          if (settings.allowExec) output(ctx, "Execution enabled by --allow-exec: bash/eval can modify your machine. This is not an OS sandbox.", "warning");
+          else if (settings.allowHarness) output(ctx, "Harness enabled by --harness: the agent may write and run ./autoresearch.sh, which is arbitrary code. This is not an OS sandbox.", "warning");
         } else if (command.op === "resume") persist(lifecycleEvent(state(ctx), "resume"));
         refresh(ctx);
+        // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`
           : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
             "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass.", { attribution: "agent" });
       } catch (error) {
-        if (!ctx.hasUI) throw error;
-        notify(ctx, messageOf(error), "error");
+        output(ctx, messageOf(error), "error");
       }
     },
   });

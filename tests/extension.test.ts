@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import deepResearch from "../index.ts";
@@ -17,13 +17,13 @@ function mockHost() {
   const notifications: { message: string; kind: string }[] = [];
   const prompts: { content: string; options: unknown }[] = [];
   const schema: Schema = { optional: () => schema };
-  let aborted = false; let pending = false; let failPersist = false;
+  let aborted = false; let pending = false; let failPersist = false; let widget: string[] | undefined;
   const ctx: CommandContext = {
     cwd: mkdtempSync(join(tmpdir(), "omp-research-test-")), hasUI: true,
     model: { provider: "test", id: "main" }, agent: { kind: "main", id: "session-test" },
     models: { resolve: s => s === "test/critic" ? { provider: "test", id: "critic" } : undefined },
     sessionManager: { getBranch: () => entries, getSessionId: () => "session-test" },
-    ui: { notify: (message, kind) => notifications.push({ message, kind }), setStatus: () => {} },
+    ui: { notify: (message, kind) => notifications.push({ message, kind }), setStatus: () => {}, setWidget: (_key, content) => { widget = content; } },
     abort: () => { aborted = true; }, hasPendingMessages: () => pending, waitForIdle: async () => {},
   };
   const api: HostAPI = {
@@ -41,6 +41,7 @@ function mockHost() {
     setPending: (v: boolean) => { pending = v; },
     failPersist: () => { failPersist = true; },
     wasAborted: () => aborted,
+    widget: () => widget,
     command: (args: string) => commands.get("deep-research")!.handler(args, ctx),
     emit: <K extends keyof Events>(name: K, event: Events[K]) => handlers.get(name)?.(event, ctx),
     call: (input: unknown, id = "call-research") => tools.get("deep_research")!.execute(id, input, undefined, undefined, ctx),
@@ -212,4 +213,64 @@ test("cancelling an intake aborts the clarification turn and retires it", async 
     assert.equal(h.state().intake, undefined); assert.equal(h.wasAborted(), true);
     assert.equal(h.emit("tool_call", { toolName: "web_search", toolCallId: "free", input: {} }), undefined);
   } finally { h.cleanup(); }
+});
+test("main-session usage from message_end enforces token budgets at the next acquisition", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web --max-tokens 1000 Inspect sources");
+    h.emit("message_end", { message: { role: "assistant", usage: { totalTokens: 1200, cost: { total: 0.01 } } } });
+    h.emit("message_end", { message: { role: "user", usage: { totalTokens: 999 } } });
+    assert.equal(h.state().mission!.pass.tokens, 1200);
+    assert.match(JSON.stringify(h.emit("tool_call", { toolName: "web_search", toolCallId: "late", input: {} })), /token budget exhausted/);
+    assert.equal(h.stop(1), undefined); assert.equal(h.state().mission!.phase, "paused");
+  } finally { h.cleanup(); }
+});
+test("harness runs appear in the run widget; web missions show none", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode data --harness --metric ms --direction lower Benchmark");
+    const input = { command: "bash autoresearch.sh" };
+    h.emit("tool_call", { toolName: "bash", toolCallId: "b1", input });
+    h.emit("tool_result", { toolName: "bash", toolCallId: "b1", input, isError: false, content: [{ type: "text", text: "ASI cache=cold\nMETRIC ms=12" }] });
+    assert.equal((await h.call({ op: "run", run: { label: "baseline", hypothesis: "h", receiptId: "b1" } })).isError, undefined);
+    assert.match(h.widget()!.join("\n"), /R1 +baseline +12/);
+    assert.deepEqual(h.state().mission!.runs[0]!.asi, { cache: "cold" });
+  } finally { h.cleanup(); }
+});
+test("an unreadable ledger fails closed until the operator resets it", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web Inspect sources");
+    h.entries.push({ type: "custom", customType: ENTRY_TYPE, data: { schemaVersion: 2 } });
+    assert.match(JSON.stringify(h.emit("tool_call", { toolName: "write", toolCallId: "w", input: {} })), /ledger unreadable/);
+    assert.equal((await h.call({ op: "read" })).isError, true);
+    await h.command("reset-ledger");
+    assert.equal(h.emit("tool_call", { toolName: "write", toolCallId: "w2", input: {} }), undefined);
+    assert.equal(h.state().mission, undefined);
+  } finally { h.cleanup(); }
+});
+test("spec command starts from a file; mode command changes an open mission", async () => {
+  const h = mockHost(); try {
+    writeFileSync(join(h.ctx.cwd, "plan.md"), "# Compare parsers\ndeep-research-mode: mixed\n## Deliverables\n- Table\n");
+    await h.command("--spec plan.md");
+    const m = h.state().mission!;
+    assert.equal(m.objective, "Compare parsers"); assert.equal(m.mode, "mixed"); assert.match(m.spec!.path, /plan\.md$/); assert.ok(m.deliverables.includes("Table"));
+    await h.command("mode data"); assert.equal(h.state().mission!.mode, "data");
+  } finally { h.cleanup(); }
+});
+test("without UI, command output goes to stderr and intake is refused", async () => {
+  const h = mockHost(); const writes: string[] = []; const original = process.stderr.write;
+  process.stderr.write = ((chunk: string) => { writes.push(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    h.ctx.hasUI = false;
+    await h.command("status"); await h.command("Compare A and B");
+    assert.match(writes.join(""), /"mission": null/); assert.match(writes.join(""), /needs an interactive UI/);
+    assert.equal(h.state().intake, undefined);
+  } finally { process.stderr.write = original; h.cleanup(); }
+});
+test("print mode refuses to start a mission it cannot run, before recording anything", async () => {
+  const h = mockHost(); const original = process.stderr.write; const writes: string[] = [];
+  process.stderr.write = ((chunk: string) => { writes.push(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    h.ctx.hasUI = false; h.ctx.mode = "print";
+    await h.command("--mode web Inspect sources");
+    assert.match(writes.join(""), /--mode rpc/); assert.equal(h.state().mission, undefined); assert.equal(h.prompts.length, 0);
+  } finally { process.stderr.write = original; h.cleanup(); }
 });

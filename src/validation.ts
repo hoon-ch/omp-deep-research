@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
+import type { AsiValue } from "./types.ts";
 export class ResearchError extends Error {
   constructor(message: string) { super(message); this.name = "ResearchError"; }
+}
+export function positiveNumber(value: unknown, name: string, max: number, allowZero = false): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value > max || (allowZero ? value < 0 : value <= 0))
+    throw new ResearchError(`${name} must be a ${allowZero ? "non-negative" : "positive"} number up to ${max}`);
+  return value;
+}
+/** The package's single plain-object guard; fields stay `unknown` and are checked where read. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 export function object(value: unknown, name = "input"): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ResearchError(`${name} must be an object`);
@@ -42,16 +52,30 @@ export function canonicalUrl(value: string): string {
   u.searchParams.sort();
   return u.href;
 }
-export function parseMetrics(output: string): { metrics: Record<string, number>; error?: string } {
+// A Set, not a Record: `__proto__` cannot be a plain own key of an object literal.
+const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+/**
+ * Harness output contract (Gajae `autoresearch.sh`): `METRIC name=<number>` lines are strict (one bad line invalidates the
+ * run); `ASI key=value` learning lines are informational, so malformed or reserved ones are skipped.
+ */
+export function parseHarnessOutput(output: string): { metrics: Record<string, number>; asi: Record<string, AsiValue>; error?: string } {
   const metrics: Record<string, number> = Object.create(null);
+  const asi: Record<string, AsiValue> = Object.create(null);
+  let error: string | undefined;
   for (const line of output.split(/\r?\n/)) {
-    if (!/^METRIC\s/.test(line)) continue;
+    const a = /^ASI\s+([A-Za-z][A-Za-z0-9_.-]{0,63})\s*=\s*(.{1,500}?)\s*$/.exec(line);
+    if (a) {
+      const raw = a[2]!;
+      if (!RESERVED_KEYS.has(a[1]!) && !Object.hasOwn(asi, a[1]!))
+        asi[a[1]!] = raw === "true" ? true : raw === "false" ? false : /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/.test(raw) && Number.isFinite(Number(raw)) ? Number(raw) : raw;
+      continue;
+    }
+    if (error || !/^METRIC\s/.test(line)) continue;
     const m = /^METRIC\s+([A-Za-z][A-Za-z0-9_.-]{0,63})\s*=\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*$/.exec(line);
-    if (!m || !Number.isFinite(Number(m[2]))) return { metrics, error: `Invalid metric line: ${line.slice(0, 160)}` };
+    if (!m || !Number.isFinite(Number(m[2]))) { error = `Invalid metric line: ${line.slice(0, 160)}`; continue; }
     const key = m[1]!;
-    if (["__proto__", "constructor", "prototype"].includes(key) || Object.hasOwn(metrics, key))
-      return { metrics, error: `Duplicate or reserved metric name: ${key}` };
+    if (RESERVED_KEYS.has(key) || Object.hasOwn(metrics, key)) { error = `Duplicate or reserved metric name: ${key}`; continue; }
     metrics[key] = Number(m[2]);
   }
-  return { metrics };
+  return { metrics, asi, ...(error ? { error } : {}) };
 }

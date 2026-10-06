@@ -1,6 +1,6 @@
 # Verification record
 
-**Date:** 2026-10-06 · **Package:** `omp-deep-research@0.1.0`
+**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.1.0` + Unreleased changes
 
 This is a record of local verification, not a production-readiness claim.
 No GitHub repository, push, or GitHub Actions run is recorded here.
@@ -10,40 +10,46 @@ No GitHub repository, push, or GitHub Actions run is recorded here.
 | Check | Result |
 |---|---|
 | `npm run check` | Passed with TypeScript 5.8.3, strict/noUncheckedIndexedAccess |
-| `npm test` | **79 tests passed; 0 failed, 0 skipped** |
+| `npm test` | **95 tests passed; 0 failed, 0 skipped** |
 | OMP 18.6.1 interactive load (`omp -e <repo>`) | Extension loaded; `/deep-research status` rendered `{"mission": null}` |
 | OMP 18.6.1 live web missions (2 runs, small budgets) | `read` URL → receipt → evidence → conclusive verdict → `completed`; ledger held `mission_created`, `tool_counted`, `receipt_recorded`, `evidence_added`, `verdict_issued`; `todo` allowed and not counted (`1/4 tools`) |
 | OMP 18.6.1 live `--mode data --harness` mission | Agent wrote `./autoresearch.sh` (wraps an existing `bench.js`, emits `METRIC`), ran `bash autoresearch.sh`; no policy blocks; run `R1` = `baseline` from observed metrics; file + experiment evidence; conclusive verdict |
 | OMP 18.6.1 live intake (`/deep-research <objective>` without `--mode`) | Status showed intake; agent asked mode/scope/deliverable via `ask`; `op:"start"` created the mission (`intake_started` → `mission_created`). First run stopped after `start` because the intake prompt said "do not research yet"; the `session_stop` continuation then fired (`1/1 nudges`) and forced an inconclusive verdict. Prompt fixed; rerun researched in the same turn and completed (`5/5 tools`) |
 | Live finding: `grep` with URL paths | OMP `grep` fetches `;`-separated URL paths. Evidence from it was correctly rejected (not a `read`), and `data` mode now blocks URL paths on every tool, not only `read` |
+| OMP 18.6.1 live `--spec plan.md --harness --critic anthropic/claude-sonnet-5-5 --max-tokens 2000000` | Spec (Gajae-style keys) started the mission with declared metric `ms` (lower). Harness runs `R1` baseline → `R2` keep with `ASI` variant data; the task receipt recorded `models: ["anthropic/claude-sonnet-5-5"]` and `agentIds: ["DRCritic"]`; the critic record was accepted with `spawnReceiptId`; conclusive verdict. 18 `usage_recorded` events, status showed `500953/2000000 tok` |
+| OMP 18.6.1 live two-segment mission (`--mode mixed --harness --critic … --metric ms --direction lower`) | Agent read the iterate brief, ran segment 0 (n=200000: baseline → keep), called `op:"segment"` for n=20000, ran segment 1 (baseline → keep); critic passed; exported `report.md` showed both segments, ASI columns and the host-observed critic pin |
+| OMP 18.6.1 live web mission with critic, after adding `outputSchema` to the brief | Scout task item carried the brief's `outputSchema`; critic answered in the critic shape; attested critic record and conclusive verdict |
+| OMP 18.6.1 live lifecycle | `pause` (aborted the turn) → `mode data` → `status` (paused, data) → `resume` (new pass, `0/6 tools`) → `cancel`; ledger held `mode_set`, `pass_paused`, `pass_resumed`, `mission_cancelled`. `runs` and `export` worked on a completed mission; `mode` on it was refused |
+| OMP 18.6.1 headless | `omp --mode rpc --no-ui`: `/deep-research --mode web …` as a `prompt` ran to a conclusive verdict and `session_settled`; `status` went to stderr. `omp -p`: `help` printed to stderr; intake and mission start were refused with guidance (the host drops a command's queued turn and never wrote a session file) |
 | `bash -n scripts/publish-github.sh` | Passed |
-| `npm pack --dry-run` | Passed; 18 files, packaging only |
+| `npm pack --dry-run` | Passed; 21 files, packaging only |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
-Tool names in `src/policy.ts` were checked against OMP `v18.6.1` `packages/coding-agent/src/tools/builtin-names.ts` and `gh.ts` `GITHUB_READONLY_OPS`.
+OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit handling, `setWidget`, print-mode command dispatch, `Usage`, async task delivery, task `outputSchema`) were checked against OMP tag `v18.6.1` sources.
 
 ## What the tests cover
 
-- Mission and intake lifecycle (intake blocks research tools, `start` keeps operator settings, cancel retires it), explicit mode checks, bounded passes, pause/resume/cancel/clear, branch-local replay and schema-version rejection.
+- Mission and intake lifecycle (intake blocks research tools, `start` keeps operator settings, cancel retires it), explicit mode checks, operator `mode_set`, bounded passes, pause/resume/cancel/clear, branch-local replay and schema-version rejection, `reset-ledger` recovery and fail-closed tool blocking on an unreadable ledger.
 - `--harness`: only a regular, unlinked root `autoresearch.sh` is writable (symlink, hard link, sibling, parent, `~`, internal-URL paths rejected); only an exact, synchronous `bash autoresearch.sh` in the session root runs (chained commands, `cd …&&`, `async`, services, other `cwd` rejected).
-- Critic brief: complete evidence IDs, snapshot and current digest.
+- Spec parsing (mode required, H1 objective, constraints, deliverables/acceptance criteria, metric pair) and flag conflicts; `--metric`, `--max-tokens`, `--max-cost` parsing.
+- Segments: metric fixed per segment, new segment may change it, per-segment baseline/best; declared metric enforced from the first run; `ASI` typed parsing; effect/MAD with 3+ valid runs and flagged-run exclusion.
+- Critic and iterate briefs; critic attestation (unpinned task, wrong model, unlinked response all rejected); task receipt model/agent-id extraction from async spawn text and blocking `details.results`.
 - Request-ID idempotence, including a repeated verdict after the mission becomes terminal.
-- Recorded source receipts, observed URL linkage for `read` paths and output URLs, deduplication and preservation of contradictory evidence.
+- Recorded source receipts, observed URL linkage for `read` paths and output URLs, deduplication and preservation of contradictory evidence; conclusive verdicts must confront contradicting evidence.
 - Rejection of search snippets as original web evidence, failed reads and fabricated source locators.
-- Actual output parsing for `METRIC`, numeric validation, baseline/keep/discard/crash/checks_failed, invalid-run exclusion and metric consistency.
-- Evidence-linked findings, mandatory caveats for inconclusive results, configured critic requirements and snapshot invalidation.
-- Extension registration and hook behavior using a **mock host**: advisory continuation, duplicate stops, budgets, abort/error handling, automatic-retry handoff and queued-user precedence.
+- Actual output parsing for `METRIC`, numeric validation, baseline/keep/discard/crash/checks_failed, invalid-run exclusion.
+- Token/cost budgets from `message_end` usage; run widget content; stderr output and print-mode refusal without a UI.
 - No load-time side effects, no existing `/autoresearch` replacement, and no dynamic source material interpolated into the system prompt.
-- Explicit-only report creation, traversal/symlink rejection, no report overwrite, valid Markdown/JSON/JSONL output.
+- Explicit-only report creation, traversal/symlink rejection, no report overwrite, valid Markdown/JSON/JSONL output, escaped untrusted text.
 - Publishing script syntax, private default, explicit public selection and rejection of unsupported flags.
 
 ## Not executed or guaranteed
 
-1. **Real OMP/Bun integration (partial):** loading, the TUI command path, intake via `ask`, live tool receipts, harness write/run, session persistence, one `session_stop` continuation and the completed state were observed. Not observed: pause/resume/cancel, branch switching, compaction, critic delegation and export in a live host. Headless `omp -p` does not surface command output (`ctx.hasUI` is false) and is not supported.
-2. **Live evaluation:** one harness benchmark ran; no `--allow-exec` run, multi-run keep/discard iteration or independent critic execution was observed. Model/provider aliases and tool availability depend on the installed host.
+1. **Real OMP integration (partial):** observed live: loading, TUI commands, intake via `ask`, spec intake, harness write/run, segments, iterate brief, attested critic, token metering, pause/mode/resume/cancel, runs/export, RPC headless, print-mode refusal, one `session_stop` continuation. Not observed live: branch switching, compaction, `reset-ledger` on a real corrupted session, `--max-cost` exhaustion, `--allow-exec`.
+2. **Live evaluation:** small benchmarks only; effect/MAD never reached three runs in a live segment.
 3. **Remote changes:** repository creation, push, npm publication and GitHub Actions execution did not occur. The supplied publish helper performs remote writes only when the user runs it in an authenticated local environment.
-4. **Security and cost isolation:** read-only policy and budgets are not an OS sandbox, an absolute wall-clock kill switch, a child-agent global budget, or a token/currency spending limit.
+4. **Security and cost isolation:** read-only policy and budgets are not an OS sandbox, a kill switch for running commands, or a meter for async task children.
 5. **Evidence truth:** receipts record observed tool results; they do not automatically establish source authenticity, entailment, statistical significance or independent reviewer identity.
 
 ## Installed-host smoke checklist
@@ -56,8 +62,10 @@ Run in a disposable working directory before enabling this extension globally.
 - Pause and resume; verify the old evidence remains and a new pass budget appears. Cancel/interrupt; confirm no unsolicited restart.
 - Switch or branch a session and return; verify the displayed mission follows only the active branch. Compact and read the durable mission again.
 - Observe one `session_stop` continuation and the final bounded stop. Host-level continuation suppression may stop earlier than the plugin budget.
-- With an actually available distinct critic model and native read-only `scout`, review the complete evidence/run snapshot. Confirm unknown model selectors fail without fallback.
-- For data/mixed experiments, first use existing result files without execution. Enable `--allow-exec` only explicitly in a disposable workspace; confirm the host's normal approval checks still apply.
+- With an actually available distinct critic model, run the critic through `view:"critic"` on a `scout` pinned to that model with the brief's `outputSchema`. Confirm the critic record is accepted only with the spawning task receipt, and that unknown model selectors fail without fallback.
+- For data/mixed experiments, first use existing result files without execution. Then try `--harness`: a run of `bash autoresearch.sh`, a new `op:"segment"`, and `view:"iterate"`. Enable `--allow-exec` only explicitly in a disposable workspace; confirm the host's normal approval checks still apply.
+- Start from a `--spec` file; change the mode of an open mission with `/deep-research mode`; check `/deep-research runs` and the run widget.
+- Headless: send `/deep-research --mode web …` as a `prompt` to `omp --mode rpc --no-ui` and wait for `session_settled`.
 - Export twice. Confirm two new report directories and valid Markdown/JSON/JSONL. Inspect sensitive content before sharing.
 - Run the real GitHub workflow after authorized publication; do not treat the included CI definition as a completed CI run.
 

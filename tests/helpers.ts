@@ -11,7 +11,7 @@ export class Ledger {
     return this.state().mission!;
   }
   receipt(overrides: Partial<Receipt> = {}) {
-    const r: Receipt = { id: `source-${++this.serial}`, tool: "read", at: NOW, inputHash: "input", outputHash: "output", preview: "Observed source material", isError: false, metrics: {}, sourceRefs: ["https://example.org/paper"], ...overrides };
+    const r: Receipt = { id: `source-${++this.serial}`, tool: "read", at: NOW, inputHash: "input", outputHash: "output", preview: "Observed source material", isError: false, metrics: {}, asi: {}, sourceRefs: ["https://example.org/paper"], ...overrides };
     this.add(makeEvent(this.state().mission!.id, "receipt_recorded", { receipt: r }, NOW)); return r;
   }
   op(input: unknown, id = `call-${++this.serial}`) {

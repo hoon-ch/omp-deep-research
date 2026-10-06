@@ -1,16 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { CRITIC_INSTRUCTIONS } from "./critic.ts";
-import type { Critic, Evidence, Intake, LedgerEvent, Mission, MissionConfig, MissionSettings, Pass, Receipt, ResearchState, Run, SessionEntry, Verdict } from "./types.ts";
-import { canonicalUrl, choice, hash, integer, object, ResearchError, strings, text } from "./validation.ts";
+import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
+import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
+import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
+import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
-const EVENT_TYPES = ["intake_started", "intake_cancelled", "mission_created", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "run_logged", "run_flagged", "notes_updated", "critic_recorded", "verdict_issued"] as const;
+const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
 export const DEFAULT_SETTINGS: MissionSettings = {
   constraints: ["Research only; do not implement or modify product code."],
   deliverables: ["A structured verdict with evidence, caveats, and a reproducible report."],
   maxContinuations: 6, maxToolCalls: 60, maxMinutes: 20, allowExec: false, allowHarness: false,
 };
 
+export function validateMetric(raw: unknown, name = "metric"): MetricContract {
+  const c = object(raw, name);
+  const metric = text(c.name, `${name}.name`, 64);
+  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(metric)) throw new ResearchError(`${name}.name must match the METRIC name syntax`);
+  return { name: metric, direction: choice(c.direction, ["lower", "higher"], `${name}.direction`) };
+}
 export function validateSettings(raw: unknown): MissionSettings {
   const c = object(raw, "settings");
   if (typeof c.allowExec !== "boolean") throw new ResearchError("allowExec must be a boolean");
@@ -20,24 +27,37 @@ export function validateSettings(raw: unknown): MissionSettings {
     maxContinuations: integer(c.maxContinuations, "maxContinuations", 0, 8),
     maxToolCalls: integer(c.maxToolCalls, "maxToolCalls", 1, 1000),
     maxMinutes: integer(c.maxMinutes, "maxMinutes", 1, 240), allowExec: c.allowExec, allowHarness: c.allowHarness,
+    ...(c.maxTokens !== undefined ? { maxTokens: integer(c.maxTokens, "maxTokens", 1000, 1_000_000_000) } : {}),
+    ...(c.maxCost !== undefined ? { maxCost: positiveNumber(c.maxCost, "maxCost", 10_000) } : {}),
+    ...(c.metric !== undefined ? { metric: validateMetric(c.metric) } : {}),
     ...(c.criticModel ? { criticModel: text(c.criticModel, "criticModel", 200) } : {}),
     ...(c.primaryModel ? { primaryModel: text(c.primaryModel, "primaryModel", 200) } : {}),
   };
+}
+function assertModeConsent(mode: Mode, settings: MissionSettings): void {
+  if (mode === "web" && (settings.allowExec || settings.allowHarness)) throw new ResearchError("--allow-exec and --harness are only supported in data/mixed mode");
 }
 export function validateConfig(raw: unknown): MissionConfig {
   const c = object(raw, "config");
   const mode = choice(c.mode, ["web", "data", "mixed"], "mode");
   const settings = validateSettings(c);
-  if (mode === "web" && (settings.allowExec || settings.allowHarness)) throw new ResearchError("--allow-exec and --harness are only supported in data/mixed mode");
-  return { ...settings, objective: text(c.objective, "objective", 6000), mode };
+  assertModeConsent(mode, settings);
+  let spec: MissionConfig["spec"];
+  if (c.spec !== undefined) {
+    const s = object(c.spec, "spec");
+    const sha256 = text(s.sha256, "spec.sha256", 64);
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new ResearchError("spec.sha256 must be a SHA-256 hex digest");
+    spec = { path: text(s.path, "spec.path", 4000), sha256 };
+  }
+  return { ...settings, objective: text(c.objective, "objective", 6000), mode, ...(spec ? { spec } : {}) };
 }
 function newPass(config: MissionConfig, at: string): Pass {
-  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [] };
+  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [], tokens: 0, cost: 0 };
 }
 export function current(state: ResearchState): Mission {
   if (!state.mission) throw new ResearchError(state.intake
     ? "Intake is pending. Clarify the mission with the user, then call deep_research op='start'."
-    : "No mission. Start one with /deep-research --mode web|data|mixed <objective>, or /deep-research <objective> for a clarifying intake.");
+    : "No mission. Start one with /deep-research --mode web|data|mixed <objective>, /deep-research --spec <file>, or /deep-research <objective> for a clarifying intake.");
   return state.mission;
 }
 export function active(state: ResearchState): Mission {
@@ -46,15 +66,7 @@ export function active(state: ResearchState): Mission {
   return m;
 }
 export function evidenceDigest(m: Mission): string {
-  return hash({ evidence: m.evidence, runs: m.runs });
-}
-export function bestRun(m: Mission): Run | undefined {
-  const runs = m.runs.filter(r => !r.flagReason && !["crash", "checks_failed"].includes(r.outcome) && Number.isFinite(r.metrics[r.primaryMetric]));
-  return runs.reduce<Run | undefined>((best, r) => {
-    if (!best) return r;
-    const a = r.metrics[r.primaryMetric]!; const b = best.metrics[best.primaryMetric]!;
-    return (r.direction === "lower" ? a < b : a > b) ? r : best;
-  }, undefined);
+  return hash({ evidence: m.evidence, runs: m.runs, segments: m.segments });
 }
 function apply(state: ResearchState, event: LedgerEvent): void {
   const d = object(event.data, "event.data");
@@ -72,13 +84,15 @@ function apply(state: ResearchState, event: LedgerEvent): void {
     const pass = object(d.pass) as unknown as Pass;
     if (!Array.isArray(pass.toolCalls) || !Number.isFinite(Date.parse(pass.deadlineAt))) throw new ResearchError("Corrupt research pass");
     if (state.intake?.id === event.missionId) state.intake = undefined;
-    state.mission = { ...config, id: event.missionId, createdAt: event.at, phase: "active", pass: structuredClone(pass), receipts: [], evidence: [], runs: [], critics: [], verdicts: [], notes: "" };
+    const segment: Segment = { index: 0, at: event.at, reason: "Mission start", ...(config.metric ? { metric: config.metric } : {}) };
+    state.mission = { ...config, id: event.missionId, createdAt: event.at, phase: "active", pass: structuredClone(pass), receipts: [], evidence: [], runs: [], segments: [segment], critics: [], verdicts: [], notes: "" };
     return;
   }
   const m = current(state);
   if (event.missionId !== m.id) throw new ResearchError("Research ledger mission ordering is invalid");
   switch (event.type) {
     case "mission_cleared": state.mission = undefined; break;
+    case "mode_set": { const mode = choice(d.mode, ["web", "data", "mixed"], "mode"); assertModeConsent(mode, m); m.mode = mode; break; }
     case "pass_resumed": m.phase = "active"; m.pass = structuredClone(d.pass) as Pass; delete m.pauseReason; break;
     case "pass_paused": m.phase = "paused"; m.pauseReason = text(d.reason, "reason"); break;
     case "mission_cancelled": m.phase = "cancelled"; m.pauseReason = text(d.reason, "reason"); break;
@@ -86,6 +100,11 @@ function apply(state: ResearchState, event: LedgerEvent): void {
     case "receipt_recorded": m.receipts.push(structuredClone(d.receipt) as Receipt); break;
     case "continuation_requested": m.pass.continuations++; m.pass.stopIds.push(text(d.stopId, "stopId")); break;
     case "evidence_added": m.evidence.push(structuredClone(d.evidence) as Evidence); break;
+    case "segment_started": {
+      const s = structuredClone(d.segment) as Segment;
+      if (s.index !== m.segments.length) throw new ResearchError("Research ledger segment ordering is invalid");
+      m.segments.push(s); break;
+    }
     case "run_logged": m.runs.push(structuredClone(d.run) as Run); break;
     case "run_flagged": {
       const r = m.runs.find(r => r.id === d.runId);
@@ -93,6 +112,7 @@ function apply(state: ResearchState, event: LedgerEvent): void {
       r.flagReason = text(d.reason, "reason"); break;
     }
     case "notes_updated": m.notes = typeof d.notes === "string" ? d.notes : ""; break;
+    case "usage_recorded": m.pass.tokens += integer(d.tokens, "tokens", 0, Number.MAX_SAFE_INTEGER); m.pass.cost += positiveNumber(d.cost, "cost", Number.MAX_VALUE, true); break;
     case "critic_recorded": m.critics.push(structuredClone(d.critic) as Critic); break;
     case "verdict_issued": {
       const v = structuredClone(d.verdict) as Verdict;
@@ -102,13 +122,22 @@ function apply(state: ResearchState, event: LedgerEvent): void {
     }
   }
 }
+function isResearchEntry(entry: SessionEntry): boolean {
+  return entry.type === "custom" && entry.customType === ENTRY_TYPE;
+}
+/** Research events on the active branch, starting after the operator's last `ledger_reset`. */
+export function researchEntries(entries: readonly SessionEntry[]): SessionEntry[] {
+  const own = entries.filter(isResearchEntry);
+  let reset = -1;
+  own.forEach((e, i) => { if (isRecord(e.data) && e.data.type === "ledger_reset") reset = i; });
+  return own.slice(reset + 1);
+}
 export function restore(entries: readonly SessionEntry[]): ResearchState {
   const state: ResearchState = { events: [] };
   const ids = new Set<string>();
-  for (const entry of entries) {
-    if (entry.type !== "custom" || entry.customType !== ENTRY_TYPE) continue;
+  for (const entry of researchEntries(entries)) {
     const raw = object(entry.data, "research event");
-    if (raw.schemaVersion !== 1) throw new ResearchError("Unsupported research ledger version; update the extension before continuing");
+    if (raw.schemaVersion !== 1) throw new ResearchError("Unsupported research ledger version; update the extension or run /deep-research reset-ledger");
     const e = raw as unknown as LedgerEvent;
     text(e.id, "event.id"); text(e.missionId, "event.missionId"); choice(e.type, EVENT_TYPES, "event.type");
     if (!Number.isFinite(Date.parse(e.at))) throw new ResearchError("Corrupt research event timestamp");
@@ -119,6 +148,10 @@ export function restore(entries: readonly SessionEntry[]): ResearchState {
 }
 export function makeEvent(missionId: string, type: LedgerEvent["type"], data: unknown, at = new Date().toISOString(), requestId?: string, requestHash?: string): LedgerEvent {
   return { schemaVersion: 1, id: randomUUID(), missionId, at, type, data, ...(requestId ? { requestId, requestHash } : {}) };
+}
+/** Operator escape hatch for an unreadable ledger: later replay ignores every earlier research event (history is kept). */
+export function resetEvent(reason: string, at = new Date().toISOString()): LedgerEvent {
+  return makeEvent(randomUUID(), "ledger_reset", { reason }, at);
 }
 function assertNoOpenWork(state: ResearchState): void {
   if (state.intake) throw new ResearchError("An intake is pending. Finish it in the conversation or use /deep-research cancel.");
@@ -133,6 +166,14 @@ export function startEvent(state: ResearchState, config: MissionConfig, at = new
 export function intakeEvent(state: ResearchState, draft: string, settings: MissionSettings, at = new Date().toISOString()): LedgerEvent {
   assertNoOpenWork(state);
   return makeEvent(randomUUID(), "intake_started", { draft, settings: validateSettings(settings) }, at);
+}
+/** Operator-only mode change for an open mission (Gajae `mode_set`). Recorded evidence stays; the new mode gates what comes next. */
+export function modeEvent(state: ResearchState, mode: Mode, at = new Date().toISOString()): LedgerEvent {
+  const m = current(state);
+  if (m.phase !== "active" && m.phase !== "paused") throw new ResearchError(`Mission is ${m.phase}; only an open mission can change mode`);
+  if (m.mode === mode) throw new ResearchError(`Mission is already in ${mode} mode`);
+  assertModeConsent(mode, m);
+  return makeEvent(m.id, "mode_set", { mode, previousMode: m.mode }, at);
 }
 export function lifecycleEvent(state: ResearchState, op: "resume" | "pause" | "cancel" | "clear", at = new Date().toISOString(), reason?: string): LedgerEvent {
   if (state.intake) {
@@ -151,22 +192,26 @@ export function lifecycleEvent(state: ResearchState, op: "resume" | "pause" | "c
 export function budgetReason(m: Mission, now = Date.now()): string | undefined {
   if (now >= Date.parse(m.pass.deadlineAt)) return "Mission pass wall-clock budget exhausted";
   if (m.pass.toolCalls.length >= m.maxToolCalls) return "Mission pass acquisition-tool budget exhausted";
+  if (m.maxTokens !== undefined && m.pass.tokens >= m.maxTokens) return `Mission pass token budget exhausted (${m.pass.tokens}/${m.maxTokens})`;
+  if (m.maxCost !== undefined && m.pass.cost >= m.maxCost) return `Mission pass cost budget exhausted ($${m.pass.cost.toFixed(4)}/$${m.maxCost})`;
   return undefined;
 }
 export function summary(state: ResearchState): unknown {
   const m = state.mission;
   const intake = state.intake ? { intake: state.intake } : {};
   if (!m) return { mission: null, ...intake };
-  return { id: m.id, objective: m.objective, mode: m.mode, phase: m.phase, pauseReason: m.pauseReason,
+  return { id: m.id, objective: m.objective, mode: m.mode, phase: m.phase, pauseReason: m.pauseReason, spec: m.spec,
     constraints: m.constraints, deliverables: m.deliverables, allowExec: m.allowExec, allowHarness: m.allowHarness, criticModel: m.criticModel,
     pass: { ...m.pass, toolCalls: m.pass.toolCalls.length },
-    limits: { continuations: m.maxContinuations, toolCalls: m.maxToolCalls },
-    counts: { receipts: m.receipts.length, evidence: m.evidence.length, runs: m.runs.length },
-    evidenceDigest: evidenceDigest(m), bestRun: bestRun(m), notes: m.notes,
-    verdict: m.verdicts.at(-1), evidence: m.evidence.map(({ id, title, stance, locator }) => ({ id, title, stance, locator })), ...intake };
+    limits: { continuations: m.maxContinuations, toolCalls: m.maxToolCalls, minutes: m.maxMinutes, tokens: m.maxTokens ?? null, cost: m.maxCost ?? null },
+    counts: { receipts: m.receipts.length, evidence: m.evidence.length, runs: m.runs.length, segments: m.segments.length },
+    segment: { index: currentSegment(m).index, metric: metricContract(m) ?? null, baselineRunId: baselineRun(m)?.id ?? null,
+      bestRunId: bestRun(m)?.id ?? null, effectToNoise: effectToNoise(m) },
+    evidenceDigest: evidenceDigest(m), notes: m.notes, verdict: m.verdicts.at(-1),
+    evidence: m.evidence.map(({ id, title, stance, locator }) => ({ id, title, stance, locator })), ...intake };
 }
-function receipt(m: Mission, id: unknown): Receipt {
-  const r = m.receipts.find(r => r.id === text(id, "receiptId", 200));
+function receipt(m: Mission, id: unknown, name = "receiptId"): Receipt {
+  const r = m.receipts.find(r => r.id === text(id, name, 200));
   if (!r) throw new ResearchError("Unknown source receipt. Use deep_research {op:'read',view:'receipts'} after reading the actual source.");
   return r;
 }
@@ -177,36 +222,48 @@ function references(m: Mission, value: unknown, name: string, required = true): 
   return ids;
 }
 export interface Prepared { event?: LedgerEvent; result: unknown; }
-/** Completes a cold intake. Operator settings (budgets, execution consent, critic) are never model-controlled. */
+/** Completes a cold intake. Operator settings (budgets, execution consent, critic, declared metric) are never model-controlled. */
 function startMission(intake: Intake | undefined, raw: unknown, requestId: string, requestHash: string, at: string): Prepared {
   if (!intake) throw new ResearchError("No pending intake. Only the user can begin one with /deep-research <objective>.");
   const p = object(raw, "mission");
+  const metric = p.metric === undefined ? undefined : validateMetric(p.metric, "mission.metric");
+  if (metric && intake.settings.metric && hash(metric) !== hash(intake.settings.metric))
+    throw new ResearchError(`The operator declared metric ${intake.settings.metric.name} (${intake.settings.metric.direction}); the intake cannot change it`);
   const config = validateConfig({ ...intake.settings, objective: p.objective, mode: p.mode,
+    ...(intake.settings.metric ?? metric ? { metric: intake.settings.metric ?? metric } : {}),
     constraints: [...new Set([...intake.settings.constraints, ...strings(p.constraints, "mission.constraints")])],
     deliverables: [...new Set([...intake.settings.deliverables, ...strings(p.deliverables, "mission.deliverables")])] });
   const data = { config, pass: newPass(config, at) };
   return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
 }
+function readView(state: ResearchState, input: Record<string, unknown>): unknown {
+  const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "runs", "critic", "iterate"], "view");
+  if (view === "summary") return summary(state);
+  if (view === "full") return state.mission ?? null;
+  const m = current(state);
+  if (view === "receipts") {
+    const receipts = [...m.receipts].reverse();
+    const offset = input.offset === undefined ? 0 : integer(input.offset, "offset", 0, 10000);
+    const limit = input.limit === undefined ? 12 : integer(input.limit, "limit", 1, 100);
+    return { total: receipts.length, offset, receipts: receipts.slice(offset, offset + limit), nextOffset: offset + limit < receipts.length ? offset + limit : null };
+  }
+  if (view === "runs") return { segments: segmentReports(m) };
+  const mission = { objective: m.objective, mode: m.mode, constraints: m.constraints, deliverables: m.deliverables };
+  if (view === "critic") return { instructions: CRITIC_INSTRUCTIONS, outputSchema: CRITIC_OUTPUT_SCHEMA, criticModel: m.criticModel ?? null, evidenceDigest: evidenceDigest(m),
+    evidenceIds: m.evidence.map(e => e.id), snapshot: { ...mission, evidence: m.evidence, segments: segmentReports(m), notes: m.notes } };
+  const report = segmentReports(m).at(-1)!;
+  return { instructions: ITERATE_INSTRUCTIONS, outputSchema: ITERATE_OUTPUT_SCHEMA, snapshot: { ...mission, segment: report.segment.index, metric: report.metric ?? null,
+    baselineRunId: report.baselineId, bestRunId: report.bestId, effectToNoise: report.effectToNoise, counts: report.counts,
+    recentRuns: report.runs.slice(-10), flaggedRuns: report.runs.filter(r => r.flagReason).map(r => ({ id: r.id, reason: r.flagReason })),
+    harness: { file: "./autoresearch.sh", run: "bash autoresearch.sh", allowed: m.allowHarness || m.allowExec,
+      contract: "exit non-zero on failure; print METRIC <name>=<number> lines (primary + secondary); optional ASI <key>=<value> learning lines; deterministic workload, fixed seeds, no live network" },
+    notes: m.notes } };
+}
 /** Pure operation preparation; the adapter persists the event before reporting success. */
 export function prepareOperation(state: ResearchState, raw: unknown, toolCallId: string, evaluator: string, at = new Date().toISOString()): Prepared {
   const input = object(raw);
-  const op = choice(input.op, ["read", "start", "evidence", "run", "flag_run", "notes", "critic", "verdict", "export"], "op");
-  if (op === "read") {
-    const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "critic"], "view");
-    if (view === "receipts") {
-      const receipts = [...current(state).receipts].reverse();
-      const offset = input.offset === undefined ? 0 : integer(input.offset, "offset", 0, 10000);
-      const limit = input.limit === undefined ? 12 : integer(input.limit, "limit", 1, 100);
-      return { result: { total: receipts.length, offset, receipts: receipts.slice(offset, offset + limit), nextOffset: offset + limit < receipts.length ? offset + limit : null } };
-    }
-    if (view === "critic") {
-      const m = current(state);
-      return { result: { instructions: CRITIC_INSTRUCTIONS, criticModel: m.criticModel ?? null, evidenceDigest: evidenceDigest(m),
-        evidenceIds: m.evidence.map(e => e.id), snapshot: { objective: m.objective, mode: m.mode, constraints: m.constraints,
-          deliverables: m.deliverables, evidence: m.evidence, runs: m.runs, bestRunId: bestRun(m)?.id ?? null, notes: m.notes } } };
-    }
-    return { result: view === "full" ? state.mission ?? null : summary(state) };
-  }
+  const op = choice(input.op, ["read", "start", "evidence", "segment", "run", "flag_run", "notes", "critic", "verdict", "export"], "op");
+  if (op === "read") return { result: readView(state, input) };
   if (op === "export") return { result: current(state) };
   const requestId = input.requestId === undefined ? toolCallId : text(input.requestId, "requestId", 200);
   const requestHash = hash(input);
@@ -217,8 +274,7 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
     return { result: { duplicate: true, ...object(previous.data) } };
   }
   if (op === "start") return startMission(state.intake, input.mission, requestId, requestHash, at);
-  const m = current(state);
-  active(state);
+  const m = active(state);
   const emit = (type: LedgerEvent["type"], data: object): Prepared => ({ event: makeEvent(m.id, type, data, at, requestId, requestHash), result: data });
   switch (op) {
     case "evidence": {
@@ -241,21 +297,31 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
         title: text(e.title, "title", 400), summary: text(e.summary, "summary"), receiptId: r.id };
       return emit("evidence_added", { evidence });
     }
+    case "segment": {
+      if (m.mode === "web") throw new ResearchError("Experiment segments require data or mixed mode");
+      const p = object(input.segment, "segment");
+      const segment: Segment = { index: m.segments.length, at, reason: text(p.reason, "segment.reason", 2000),
+        ...(p.metric !== undefined ? { metric: validateMetric(p.metric, "segment.metric") } : {}) };
+      return emit("segment_started", { segment });
+    }
     case "run": {
       if (m.mode === "web") throw new ResearchError("Experiment runs require data or mixed mode");
       const p = object(input.run, "run"); const r = receipt(m, p.receiptId);
-      const primaryMetric = text(p.primaryMetric, "primaryMetric", 64); const direction = choice(p.direction, ["lower", "higher"], "direction");
-      const first = m.runs[0];
-      if (first && (first.primaryMetric !== primaryMetric || first.direction !== direction)) throw new ResearchError("Primary metric/direction cannot change within a mission");
+      const contract = metricContract(m);
+      const primaryMetric = p.primaryMetric === undefined && contract ? contract.name : text(p.primaryMetric, "primaryMetric", 64);
+      const direction = p.direction === undefined && contract ? contract.direction : choice(p.direction, ["lower", "higher"], "direction");
+      if (contract && (contract.name !== primaryMetric || contract.direction !== direction))
+        throw new ResearchError(`Segment ${currentSegment(m).index} measures ${contract.name} (${contract.direction} is better); start a new segment to change the metric or direction`);
       if (p.checksPassed !== undefined && typeof p.checksPassed !== "boolean") throw new ResearchError("checksPassed must be boolean");
+      if (segmentRuns(m).some(run => run.receiptId === r.id)) throw new ResearchError("This receipt is already logged as a run in the current segment");
       const value = r.metrics[primaryMetric]; const best = bestRun(m);
       let outcome: Run["outcome"];
       if (r.isError) outcome = "crash";
       else if (p.checksPassed === false || r.metricError || !Number.isFinite(value)) outcome = "checks_failed";
       else if (!best) outcome = "baseline";
       else outcome = (direction === "lower" ? value! < best.metrics[primaryMetric]! : value! > best.metrics[primaryMetric]!) ? "keep" : "discard";
-      const run: Run = { id: `R${m.runs.length + 1}`, at, label: text(p.label, "label", 400), hypothesis: text(p.hypothesis, "hypothesis"),
-        receiptId: r.id, primaryMetric, direction, metrics: r.metrics, outcome,
+      const run: Run = { id: `R${m.runs.length + 1}`, at, segment: currentSegment(m).index, label: text(p.label, "label", 400),
+        hypothesis: text(p.hypothesis, "hypothesis"), receiptId: r.id, primaryMetric, direction, metrics: r.metrics, asi: r.asi, outcome,
         ...(typeof p.checksPassed === "boolean" ? { checksPassed: p.checksPassed } : {}), ...(p.notes ? { notes: text(p.notes, "notes") } : {}) };
       return emit("run_logged", { run });
     }
@@ -271,7 +337,18 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const reviewer = text(p.evaluator, "evaluator", 200);
       if (reviewer === m.primaryModel || reviewer === evaluator) throw new ResearchError("A critic must declare an evaluator distinct from the research model");
       if (m.criticModel && reviewer !== m.criticModel) throw new ResearchError(`Expected configured critic: ${m.criticModel}`);
-      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id,
+      // Attestation: the host-observed task input pinned this model. Required when the operator configured a critic.
+      let spawnReceiptId: string | undefined;
+      if (p.spawnReceiptId !== undefined || m.criticModel) {
+        const spawn = receipt(m, p.spawnReceiptId, "spawnReceiptId");
+        if (spawn.tool !== "task" || spawn.isError) throw new ResearchError("spawnReceiptId must reference the successful task call that ran the critic");
+        if (!spawn.models?.includes(reviewer)) throw new ResearchError(`The referenced task call did not pin ${reviewer}; set model on the scout task item`);
+        // The response must be the task result itself (blocking spawn) or a read of one of the agents that call spawned.
+        const linked = r.id === spawn.id || (r.tool === "read" && r.sourceRefs.some(ref => spawn.agentIds?.some(id => ref === `agent://${id}` || ref.startsWith(`agent://${id}/`))));
+        if (!linked) throw new ResearchError("The critic response receipt must be the spawning task result or a read of agent://<id> for an agent that task spawned");
+        spawnReceiptId = spawn.id;
+      }
+      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id, ...(spawnReceiptId ? { spawnReceiptId } : {}),
         evidenceIds: references(m, p.evidenceIds, "critic.evidenceIds"), assessment: choice(p.assessment, ["pass", "revise"], "assessment"),
         summary: text(p.summary, "critic.summary"), concerns: strings(p.concerns, "critic.concerns"), evidenceDigest: evidenceDigest(m) };
       if (critic.evidenceIds.length !== m.evidence.length) throw new ResearchError("The critic must review the complete current evidence set");
@@ -285,6 +362,10 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const caveats = strings(p.caveats, "caveats"); const digest = evidenceDigest(m); const critic = m.critics.at(-1);
       if (disposition === "conclusive") {
         if (!m.evidence.length || !findings.length) throw new ResearchError("A conclusive verdict needs recorded evidence and cited findings");
+        // Contradicting evidence must be confronted: cited by a finding or named (by ID) in a caveat.
+        const cited = new Set(findings.flatMap(f => f.evidenceIds)); const caveatText = caveats.join("\n");
+        const ignored = m.evidence.filter(e => e.stance === "contradicts" && !cited.has(e.id) && !new RegExp(`\\b${e.id}\\b`).test(caveatText)).map(e => e.id);
+        if (ignored.length) throw new ResearchError(`Contradicting evidence ${ignored.join(", ")} must be cited by a finding or addressed by ID in a caveat`);
         if (m.criticModel && !critic) throw new ResearchError("A configured critic receipt is required before a conclusive verdict");
         if (critic && (critic.assessment !== "pass" || critic.evidenceDigest !== digest)) throw new ResearchError("The critic must pass the CURRENT evidence/run snapshot; re-review after changes");
       } else if (!caveats.length) throw new ResearchError("An inconclusive verdict must explain its limitations in caveats");

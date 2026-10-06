@@ -64,6 +64,26 @@ OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시�
 /deep-research 이 프로젝트의 직렬화 방식 중 어느 쪽이 빠른지 알아봐줘
 ```
 
+작성해 둔 명세(spec) 파일로 질문 없이 바로 시작할 수도 있습니다. 모드 선언은 필수이며, Gajae의 `autoresearch-*` 키도 그대로 읽습니다.
+
+```text
+/deep-research --spec plan.md --harness --critic anthropic/claude-sonnet-5-5
+```
+
+```markdown
+# n=200000에서 Float64Array 정렬이 비교 함수를 쓴 Array 정렬보다 빠른가?
+
+deep-research-mode: data
+deep-research-metric: ms
+deep-research-metric-direction: lower
+
+## Constraints
+- bench.js는 수정하지 않는다
+
+## Deliverables
+- array baseline과 typed 반복 실험의 keep/discard
+```
+
 읽기 전용 로컬 데이터 조사:
 
 ```text
@@ -73,10 +93,10 @@ OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시�
 벤치마크 하네스로 baseline/keep/discard 실험을 반복하는 조사(Gajae autoresearch의 실험 루프):
 
 ```text
-/deep-research --mode data --harness --budget 4 --max-tools 40 기존 벤치마크로 JSON 파서 두 개의 지연 시간을 비교해줘. 제품 코드는 변경하지 마.
+/deep-research --mode data --harness --metric latency_ms --direction lower --budget 4 --max-tools 40 기존 벤치마크로 JSON 파서 두 개의 지연 시간을 비교해줘. 제품 코드는 변경하지 마.
 ```
 
-**`--harness`**는 작업 디렉터리 루트의 `autoresearch.sh` 한 파일만 `write`로 쓰고, 정확히 `bash autoresearch.sh`(동기 실행, 루트 디렉터리)만 실행하도록 허용합니다. 심볼릭 링크·하드 링크된 `autoresearch.sh`는 거부합니다. 그래도 하네스 내용은 에이전트가 작성한 **임의 코드**이므로 격리 기능이 아닙니다.
+**`--harness`**는 작업 디렉터리 루트의 `autoresearch.sh` 한 파일만 `write`로 쓰고, 정확히 `bash autoresearch.sh`(동기 실행, 루트 디렉터리)만 실행하도록 허용합니다. 심볼릭 링크·하드 링크된 `autoresearch.sh`는 거부합니다. 그래도 하네스 내용은 에이전트가 작성한 **임의 코드**이므로 격리 기능이 아닙니다. 실험이 진행되면 편집기 위에 현재 세그먼트의 실행 표(baseline `b`, 최선 `*`, keep/discard, 제외 표시)가 나타납니다.
 
 **`--allow-exec`는 임의 코드 실행 권한입니다.** OMP의 `bash`·`eval`을 모두 허용합니다. 두 옵션 모두 `data`/`mixed` 모드 전용입니다. 별도 작업 복사본이나 컨테이너에서 사용하고, 기존 OMP 승인 절차를 유지하십시오.
 
@@ -84,26 +104,34 @@ OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시�
 
 | 명령/옵션 | 동작 |
 |---|---|
-| `/deep-research <objective>` | intake 시작. 에이전트가 확인 후 `start` 호출 |
+| `/deep-research <objective>` | intake 시작. 에이전트가 확인 후 `start` 호출. UI가 없는 print/json 모드에서는 거부 |
 | `/deep-research --mode … <objective>` | 명시한 모드로 미션 즉시 시작 |
+| `/deep-research --spec <file>` | 명세 파일로 즉시 시작. 경로와 SHA-256을 기록 |
 | `/deep-research` 또는 `help` | 사용법만 표시. 자동으로 조사하지 않음 |
-| `/deep-research status` | 목표, 현재 상태, 출처 수, 예산, 마지막 결론, 대기 중인 intake |
+| `/deep-research status` | 목표, 현재 상태, 출처 수, 예산·사용량, 세그먼트, 마지막 결론, 대기 중인 intake |
+| `/deep-research runs` | 현재 세그먼트 실행 표 전체 |
+| `/deep-research mode web\|data\|mixed` | 열린 미션의 모드 변경(사용자 전용). 기존 근거는 유지 |
 | `/deep-research pause` | 현재 패스를 일시중지하고 중단 요청 |
 | `/deep-research resume` | 근거와 이전 결론을 유지하며 새 예산의 패스 시작 |
 | `/deep-research cancel` | 미션 또는 intake 취소. 자동 재시작 없음 |
 | `/deep-research clear` | 현재 미션(또는 intake)을 논리적으로 정리. 원장은 삭제하지 않음 |
 | `/deep-research export` | 새로운 로컬 폴더에 Markdown·JSON·JSONL 저장 |
+| `/deep-research reset-ledger` | 읽을 수 없는 원장(버전 불일치·손상)을 재생 대상에서 제외. 기록은 세션에 남음 |
 | `--mode web\|data\|mixed` | 생략하면 intake. 파일 존재 여부로 모드를 추론하지 않음 |
 | `--harness` | data/mixed 전용. `./autoresearch.sh` 작성과 `bash autoresearch.sh` 실행만 허용 |
 | `--allow-exec` | data/mixed 전용. `bash`·`eval` 전체 허용 |
+| `--metric <name> --direction lower\|higher` | 주요 지표 선언. 첫 실행부터 강제 |
 | `--budget 0..8` | 패스당 추가 자동 이어가기 요청 수. 기본 6 |
 | `--max-tools 1..1000` | 패스당 부모 세션의 자료 수집 도구 호출 한도. 기본 60 |
 | `--max-minutes 1..240` | 패스의 경과 시간 제한. 기본 20분 |
+| `--max-tokens N`, `--max-cost USD` | 패스당 메인 세션 모델 사용량(토큰, 제공자 보고 비용) 한도 |
 | `--critic provider/model` | 사용 가능한 별도 평가 모델 지정. 임의 대체하지 않음 |
 | `--constraint "..."` | 제약 추가. 반복 지정 가능 |
 | `--deliverable "..."` | 산출물 요구 추가. 반복 지정 가능 |
 
-`--budget`은 전체 모델 호출 횟수나 토큰·요금 상한이 아닙니다. 시간·도구 예산은 부모 도구 호출/종료 경계에서 검사하며, 실행 중인 긴 명령을 강제 종료하지 않습니다. `task`의 자식 호출 하나하나를 합산하지도 않습니다. 미션이 중단되거나 예산을 소진했을 때 결론을 저장하지 못했다면, 이를 완료로 위장하지 않고 `paused`로 남깁니다.
+`--budget`은 전체 모델 호출 횟수가 아닙니다. 시간·도구·토큰·비용 예산은 부모 도구 호출/종료 경계에서 검사하며, 실행 중인 긴 명령을 강제 종료하지 않습니다. 토큰·비용은 메인 세션의 어시스턴트 응답과 동기(blocking) `task` 결과에 보고된 사용량을 합산합니다. 비동기 `task` 자식의 사용량은 호스트가 확장에 넘기지 않아 합산되지 않습니다. 미션이 중단되거나 예산을 소진했을 때 결론을 저장하지 못했다면, 이를 완료로 위장하지 않고 `paused`로 남깁니다.
+
+헤드리스 실행은 `omp --mode rpc --no-ui`를 씁니다. `/deep-research --mode … <objective>`를 `prompt` 명령으로 보내고 `session_settled` 프레임까지 기다리면 미션이 끝까지 실행됩니다. OMP 18.6.1의 `omp -p`는 명령이 예약한 후속 턴을 실행하지 않고 종료하므로, 미션을 시작·재개하는 명령은 기록 전에 거부합니다. UI가 없을 때 `status`·`runs`·`export`·`help` 출력과 오류는 stderr로 나갑니다.
 
 `resume`은 사용자의 명시적인 새 실행 요청입니다. 기존 패스의 자동 무한 연장이나 OMP 종료 후 백그라운드 실행이 아닙니다.
 
@@ -113,14 +141,15 @@ OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시�
 
 | `op` | 내용 |
 |---|---|
-| `read` | 요약, 전체 미션, 최근 도구 영수증, critic 브리프. `view: "summary"\|"full"\|"receipts"\|"critic"` |
-| `start` | 대기 중인 intake를 확인된 목표·모드·제약·결과물로 미션으로 전환. 예산·실행 권한은 변경 불가 |
+| `read` | 요약, 전체 미션, 최근 도구 영수증, 세그먼트별 실행, critic 브리프, 다음 실험 브리프. `view: "summary"\|"full"\|"receipts"\|"runs"\|"critic"\|"iterate"` |
+| `start` | 대기 중인 intake를 확인된 목표·모드·제약·결과물(선택: 지표)로 미션으로 전환. 예산·실행 권한은 변경 불가 |
 | `evidence` | 원문 읽기 결과와 연결된 근거 추가. 같은 출처·주장·stance는 중복 제거 |
-| `run` | 실제 출력의 `METRIC`으로 baseline/keep/discard/crash/checks_failed 기록 |
+| `segment` | 작업량·측정 방식·지표가 바뀌어 이전 실행과 비교할 수 없을 때 새 세그먼트 시작 |
+| `run` | 실제 출력의 `METRIC`으로 baseline/keep/discard/crash/checks_failed 기록. `ASI` 줄도 함께 보존 |
 | `flag_run` | 부정확하거나 조작된 실험 제외, 최선 지표 재계산 |
 | `notes` | 가설·관찰·다음 시도를 보존 |
-| `critic` | 검토자, 결과 영수증, 검토한 근거 집합, 우려사항 기록 |
-| `verdict` | 출처에 연결된 findings와 caveats를 갖춘 결론 저장 |
+| `critic` | 검토자, 결과 영수증, 생성한 `task` 영수증, 검토한 근거 집합, 우려사항 기록 |
+| `verdict` | 출처에 연결된 findings와 caveats를 갖춘 결론 저장. 반대 근거는 인용하거나 caveat에서 ID로 다뤄야 함 |
 | `export` | 로컬 산출물 명시적 생성 |
 
 웹 근거에는 URL을 직접 연 `read` 영수증과 관측된 URL이 필요합니다. 검색 스니펫, `github` 결과, 하위 에이전트의 요약은 단서일 뿐 원문 확인을 대체할 수 없습니다. 실제 출처의 진실성이나 주장과의 논리적 부합성까지 자동 증명하는 것은 아닙니다.
@@ -147,13 +176,19 @@ intake 중에는 위 표와 무관하게 `deep_research`, `ask`, `todo`, `wait`,
 ```text
 METRIC latency_ms=128.4
 METRIC memory_mb=241
+ASI variant=typed
+ASI cache=cold
 ```
 
-주요 지표와 방향은 첫 실행부터 미션 내에서 고정됩니다. 지표가 엄격히 개선되면 `keep`, 동률·악화면 `discard`입니다. 이는 통계적 유의성을 의미하지 않으며 코드 commit/revert를 수행하지도 않습니다. 잘못된 지표, 실행 오류, 검사 실패는 유효한 최선 실험에 포함하지 않습니다.
+`METRIC` 줄이 하나라도 형식에 어긋나면 그 실행은 `checks_failed`입니다. `ASI` 줄은 학습용 메모로 실행 기록에 보존되며, 형식이 틀린 줄은 건너뜁니다.
 
-기본 조사 모델은 OMP의 현재 모델입니다. `--critic`을 지정하면 모델 선택자를 OMP의 공개 모델 조회 API로 해석합니다. 메인 모델과 같은 모델이거나 사용 불가능한 선택자는 미션 시작 전에 거부합니다. 메인 에이전트는 `deep_research(op:"read", view:"critic")`의 critic 브리프(지시문 + 전체 근거·실험 스냅샷 + 다이제스트)를 읽기 전용 `scout`에 그 모델로 전달합니다. 지시문은 Gajae `auto-critic.md`를 이 확장의 `critic` 기록 형식에 맞게 고친 것입니다. 사용자 환경에 `scout`이나 해당 모델이 없다면 임의 코딩 에이전트/모델로 대체하지 않습니다.
+주요 지표와 방향은 세그먼트 안에서 고정됩니다(`--metric`/명세/intake에서 선언하거나, 첫 실행으로 정해짐). 작업량·측정 방식·지표가 바뀌면 에이전트가 `op:"segment"`로 새 세그먼트를 시작하고, baseline·최선·keep/discard는 세그먼트마다 다시 계산됩니다. 세그먼트의 첫 유효 실행이 baseline이며, 이후 엄격히 개선되면 `keep`, 동률·악화면 `discard`입니다. 유효 실행이 3개 이상이면 Gajae의 run confidence와 같은 방식으로 `|최선 − baseline| / MAD`(effect/MAD)를 보여줍니다. 이는 통계적 유의성이 아니며 코드 commit/revert를 수행하지도 않습니다. 잘못된 지표, 실행 오류, 검사 실패, 제외된 실행은 계산에서 빠집니다.
 
-Critic은 현재의 **전체 근거·실험 스냅샷**을 검토해야 합니다. 이후 근거나 실험 유효성이 바뀌면 기존 검토는 무효가 됩니다. 지정된 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만, 한계를 밝힌 `inconclusive`는 허용합니다. 별도 모델 호출의 독립성을 암호학적으로 입증하는 시스템은 아닙니다.
+다음 실험은 `deep_research(op:"read", view:"iterate")`의 플래너 브리프(Gajae `auto-iterate.md` 기반 지시문 + 현재 세그먼트 스냅샷 + 응답 스키마)로 계획합니다. 에이전트가 직접 따르거나 `scout`에 맡길 수 있습니다.
+
+기본 조사 모델은 OMP의 현재 모델입니다. `--critic`을 지정하면 모델 선택자를 OMP의 공개 모델 조회 API로 해석합니다. 메인 모델과 같은 모델이거나 사용 불가능한 선택자는 미션 시작 전에 거부합니다. 메인 에이전트는 `deep_research(op:"read", view:"critic")`의 critic 브리프(Gajae `auto-critic.md` 기반 지시문 + 전체 근거·실험 스냅샷 + 다이제스트 + 응답 스키마)를, 그 모델 하나로 고정한 읽기 전용 `scout` 작업 항목에 `outputSchema`와 함께 전달합니다. 사용자 환경에 `scout`이나 해당 모델이 없다면 임의 코딩 에이전트/모델로 대체하지 않습니다.
+
+Critic은 현재의 **전체 근거·실험 스냅샷**을 검토해야 합니다. 이후 근거·실험·세그먼트가 바뀌면 기존 검토는 무효가 됩니다. `--critic`을 지정한 미션에서는 critic 기록이 (1) 그 모델로 고정된 `task` 호출 영수증과 (2) 그 호출이 만든 에이전트의 `agent://<id>`를 읽은 응답 영수증(또는 동기 `task` 결과)에 연결되어야 합니다. 호스트가 관측한 입력과 결과로 확인하는 방식이며, 제공자가 실제로 어떤 모델을 썼는지에 대한 암호학적 증명은 아닙니다. 지정된 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만, 한계를 밝힌 `inconclusive`는 허용합니다.
 
 ## 6. 상태와 파일
 
@@ -163,7 +198,7 @@ Critic은 현재의 **전체 근거·실험 스냅샷**을 검토해야 합니�
 io.github.hoon-ch.omp-deep-research.event.v1
 ```
 
-이벤트를 읽을 때마다 현재 `getBranch()`에서 복원하므로 세션 전환·브랜치 이동·compaction 뒤에도 다른 브랜치의 근거를 섞지 않습니다. 내부 상태를 전역 변수나 별도 `.gjc/` 파일에 저장하지 않습니다. 영구 보관 여부는 OMP 세션 저장 방식에 따릅니다.
+이벤트를 읽을 때마다 현재 `getBranch()`에서 복원하므로 세션 전환·브랜치 이동·compaction 뒤에도 다른 브랜치의 근거를 섞지 않습니다. 같은 브랜치 끝에서는 복원 결과를 캐시합니다. 원장을 읽을 수 없으면(예: 더 새로운 버전이 쓴 이벤트) 조사 정책 상태를 알 수 없으므로 `deep_research` 외 도구 호출을 막고, `/deep-research reset-ledger`로 이전 이벤트를 재생 대상에서 제외할 수 있습니다. 내부 상태를 전역 변수나 별도 `.gjc/` 파일에 저장하지 않습니다. 영구 보관 여부는 OMP 세션 저장 방식에 따릅니다.
 
 내보내기를 요청하면 작업 디렉터리에 아래 파일이 생깁니다.
 
