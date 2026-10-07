@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Cheap parallel exploration: `view:"explore"` returns a lead-finding brief and output schema; the agent fans independent sub-questions out to `scout`s in one `task` call without pinning a model, so the user's scout role (`@smol` by default) does the searching and the main model judges and records evidence. `--max-children` (default 8) caps subagents per pass.
+- Subagents spawned during an active mission are governed through a shared in-process registry: `data`-mode web limits, mission pause/cancel and time/token/cost limits apply to their tool calls, and their usage is persisted into the pass (`childTokens`/`childCost`; status shows `tok (scouts N)`). Usage is now recorded for every active mission, not only when a cap is set; blocking-task `details.usage` is no longer added separately (it would double count).
 - **Breaking:** `--mode` is no longer defaulted to `web`. Without `--mode`, `/deep-research <objective>` opens an intake: no mission exists and only control tools run until the agent calls `deep_research op:"start"` with the clarified objective, mode, constraints and deliverables. Operator settings stay command-only.
 - `--harness` (data/mixed): allows `write` only to a regular, unlinked `<cwd>/autoresearch.sh` and execution of exactly `bash autoresearch.sh` (synchronous, session root), matching Gajae's harness contract without opening general bash.
 - `deep_research op:"read", view:"critic"` returns a critic brief adapted from Gajae `auto-critic.md`, with the full evidence/run snapshot and its digest.

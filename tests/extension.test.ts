@@ -44,6 +44,7 @@ function mockHost() {
     widget: () => widget,
     command: (args: string) => commands.get("deep-research")!.handler(args, ctx),
     emit: <K extends keyof Events>(name: K, event: Events[K]) => handlers.get(name)?.(event, ctx),
+    emitAs: <K extends keyof Events>(agent: HostContext["agent"], name: K, event: Events[K]) => handlers.get(name)?.(event, { ...ctx, agent }),
     call: (input: unknown, id = "call-research") => tools.get("deep_research")!.execute(id, input, undefined, undefined, ctx),
     stop: (turn_id: number, signal = new AbortController().signal) => handlers.get("session_stop")!({ turn_id, signal, session_id: "session-test" }, ctx) as { continue?: boolean; additionalContext?: string } | undefined,
     cleanup: () => rmSync(ctx.cwd, { recursive: true, force: true }),
@@ -273,4 +274,34 @@ test("print mode refuses to start a mission it cannot run, before recording anyt
     await h.command("--mode web Inspect sources");
     assert.match(writes.join(""), /--mode rpc/); assert.equal(h.state().mission, undefined); assert.equal(h.prompts.length, 0);
   } finally { process.stderr.write = original; h.cleanup(); }
+});
+test("each scout task item counts against the pass's subagent budget", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web --max-children 3 Compare A and B");
+    const batch = (n: number) => ({ context: "c", tasks: Array.from({ length: n }, (_, i) => ({ agent: "scout", task: `q${i}` })) });
+    assert.equal(h.emit("tool_call", { toolName: "task", toolCallId: "t1", input: batch(2) }), undefined);
+    assert.equal(h.state().mission!.pass.children, 2);
+    assert.match(JSON.stringify(h.emit("tool_call", { toolName: "task", toolCallId: "t2", input: batch(2) })), /1 of 3 left this pass, 2 requested/);
+    assert.equal(h.emit("tool_call", { toolName: "task", toolCallId: "t3", input: { agent: "scout", task: "q" } }), undefined);
+    const brief = await h.call({ op: "read", view: "explore" });
+    assert.match(brief.content[0]!.text, /"childrenLeft": 0/);
+  } finally { h.cleanup(); }
+});
+test("scouts spawned by an active mission obey its mode, report usage, and stop when it pauses", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode data --max-tokens 50000 Inspect local results");
+    const scout = { kind: "sub" as const, id: "Scout-gov", parentId: h.ctx.agent.id };
+    h.emit("tool_call", { toolName: "task", toolCallId: "spawn", input: { agent: "scout", task: "find result files" } });
+    assert.match(JSON.stringify(h.emitAs(scout, "tool_call", { toolName: "web_search", toolCallId: "c1", input: {} })), /Data-only mission/);
+    assert.equal(h.emitAs(scout, "tool_call", { toolName: "read", toolCallId: "c2", input: { path: "results.csv" } }), undefined);
+    h.emitAs(scout, "message_end", { message: { role: "assistant", usage: { totalTokens: 900, cost: { total: 0.001 } } } });
+    assert.equal(h.state().mission!.pass.childTokens, 0); // persisted only by the main session
+    h.emit("message_end", { message: { role: "assistant", usage: { totalTokens: 100 } } });
+    const pass = h.state().mission!.pass;
+    assert.equal(pass.childTokens, 900); assert.equal(pass.tokens, 1000);
+    await h.command("pause");
+    assert.match(JSON.stringify(h.emitAs(scout, "tool_call", { toolName: "read", toolCallId: "c3", input: { path: "x" } })), /mission is paused/);
+    const later = { kind: "sub" as const, id: "Scout-unbound", parentId: h.ctx.agent.id };
+    assert.equal(h.emitAs(later, "tool_call", { toolName: "web_search", toolCallId: "c4", input: {} }), undefined);
+  } finally { h.cleanup(); }
 });

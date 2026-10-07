@@ -68,13 +68,13 @@ The host contract uses `pi.zod`, `registerTool`, `registerCommand`, `appendEntry
 These are design decisions, not missing Gajae features:
 
 - **Cross-session merging.** The active session branch is the source of truth so branches and forks never leak evidence. Use `export` to carry results out.
-- **Automatic multi-lane scheduling.** Parallel lanes are the host's `task` tool (several `scout` items in one call); the extension does not schedule them.
+- **Automatic multi-lane scheduling.** The agent fans independent sub-questions out to cheap `scout`s itself (`view:"explore"`, one `task` call, bounded by `--max-children`); the extension budgets and governs those children but does not schedule them.
 - **Calibrated evidence scoring.** Verdict confidence stays a qualitative label; the only numeric score is the run effect/MAD ratio, labelled as not a significance test.
 - **Cryptographic reviewer identity.** Critic attestation is host-observed (task model pin + linked response), not a signature; a provider can still serve a different model than requested.
 
 ## Remaining host limits
 
-- Token/cost budgets count main-session assistant usage (`message_end`) and blocking `task` results (`details.usage`). Async `task` children report usage only to the host, so their spend is not metered here.
+- Token/cost budgets count main-session assistant usage and, through a module-level registry, the usage of subagents spawned while the mission was active (OMP 18.6.1 runs subagents in-process and re-binds the extension per child session). A host that ran subagents out of process would lose that child metering and governance.
 - OMP 18.6.1 `omp -p` exits without running the turn a command queues (and does not flush the session), so starting or resuming work there is refused; `omp --mode rpc --no-ui` runs missions headless.
 - Budgets are checkpoints (next tool call, next stop), not kill switches for a running command.
 - `--harness` narrows what the agent may write and run, but the harness itself is agent-written code with the user's privileges. It is a consent boundary, not a sandbox. Gajae has the same property.

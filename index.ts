@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { budgetReason, ENTRY_TYPE, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, startEvent, summary } from "./src/engine.ts";
+import { budgetReason, ENTRY_TYPE, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
-import { blockedReason, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY } from "./src/policy.ts";
-import { buildReceipt, taskUsage } from "./src/receipts.ts";
+import { blockedReason, childBlockedReason, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY, taskItemCount } from "./src/policy.ts";
+import { buildReceipt } from "./src/receipts.ts";
 import { exportReport } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
 import { toolSchema } from "./src/schema.ts";
 import { parseSpec } from "./src/spec.ts";
 import { object, ResearchError } from "./src/validation.ts";
-import type { HostAPI, HostContext, ToolResult } from "./src/host.ts";
-import type { LedgerEvent, MissionSettings, ResearchState, SessionEntry } from "./src/types.ts";
+import type { HostAPI, HostContext, HostUsage, ToolResult } from "./src/host.ts";
+import type { LedgerEvent, Mission, MissionSettings, ResearchState, SessionEntry } from "./src/types.ts";
 
 const modelId = (ctx: HostContext) => ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown-host-model";
 const isMain = (ctx: HostContext) => ctx.agent.kind === "main";
@@ -19,6 +19,35 @@ const messageOf = (e: unknown) => e instanceof Error ? e.message : String(e);
 const STATUS_KEY = "omp-deep-research";
 
 type Loaded = { state: ResearchState; error?: undefined } | { state?: undefined; error: string };
+
+/**
+ * OMP 18.6.1 runs subagents in-process and re-binds this factory per child session, so module state is shared between
+ * the main session's instance and its children's. The main instance publishes its mission here (keyed by agent id);
+ * a child spawned while that mission is active is bound to it, governed by it, and reports usage for the main instance
+ * to persist. Children first seen with no active mission are not governed.
+ */
+interface LiveMission { mission: Mission; pendingTokens: number; pendingCost: number }
+const live = new Map<string, LiveMission>();
+const childBinding = new Map<string, { root: string; missionId: string }>();
+function usageOf(usage: HostUsage | undefined): { tokens: number; cost: number } {
+  const tokens = typeof usage?.totalTokens === "number" && Number.isFinite(usage.totalTokens) && usage.totalTokens > 0 ? Math.round(usage.totalTokens) : 0;
+  const cost = typeof usage?.cost?.total === "number" && Number.isFinite(usage.cost.total) && usage.cost.total > 0 ? usage.cost.total : 0;
+  return { tokens, cost };
+}
+/** The child's binding, created on first sight by walking parentId to a published main session with an active mission. */
+function bindChild(ctx: HostContext): { entry: LiveMission; missionId: string } | undefined {
+  let binding = childBinding.get(ctx.agent.id);
+  if (!binding) {
+    const parent = ctx.agent.parentId;
+    const root = parent === undefined ? undefined : live.has(parent) ? parent : childBinding.get(parent)?.root;
+    const entry = root === undefined ? undefined : live.get(root);
+    if (!root || !entry || entry.mission.phase !== "active") return undefined;
+    binding = { root, missionId: entry.mission.id };
+    childBinding.set(ctx.agent.id, binding);
+  }
+  const entry = live.get(binding.root);
+  return entry && { entry, missionId: binding.missionId };
+}
 
 /** OMP loads this default factory; all mission state comes from the active branch. */
 export default function deepResearch(pi: HostAPI): void {
@@ -30,11 +59,25 @@ export default function deepResearch(pi: HostAPI): void {
     const last: SessionEntry | undefined = entries.at(-1);
     const eventId = last && typeof last.data === "object" && last.data && "id" in last.data ? String(last.data.id) : "";
     const key = `${entries.length}:${last?.id ?? ""}:${eventId}`;
-    if (cache?.key === key) return cache.loaded;
-    let loaded: Loaded;
-    try { loaded = { state: restore(entries) }; } catch (e) { loaded = { error: messageOf(e) }; }
-    cache = { key, loaded };
-    return loaded;
+    if (cache?.key !== key) {
+      let loaded: Loaded;
+      try { loaded = { state: restore(entries) }; } catch (e) { loaded = { error: messageOf(e) }; }
+      cache = { key, loaded };
+    }
+    if (isMain(ctx)) {
+      const m = cache.loaded.state?.mission; const entry = live.get(ctx.agent.id);
+      if (!m) live.delete(ctx.agent.id);
+      else if (entry) entry.mission = m;
+      else live.set(ctx.agent.id, { mission: m, pendingTokens: 0, pendingCost: 0 });
+    }
+    return cache.loaded;
+  }
+  /** Persists subagent usage reported since the last main-session hook. */
+  function flushChildUsage(ctx: HostContext) {
+    const entry = live.get(ctx.agent.id); const m = load(ctx).state?.mission;
+    if (!entry || !m || (!entry.pendingTokens && !entry.pendingCost)) return;
+    persist(makeEvent(m.id, "usage_recorded", { source: "children", tokens: entry.pendingTokens, cost: entry.pendingCost }));
+    entry.pendingTokens = 0; entry.pendingCost = 0;
   }
   /** Strict read for operations that must not proceed on an unreadable ledger. */
   function state(ctx: HostContext): ResearchState {
@@ -55,10 +98,10 @@ export default function deepResearch(pi: HostAPI): void {
       ctx.ui.setStatus(STATUS_KEY, "Research ledger unreadable · /deep-research reset-ledger"); ctx.ui.setWidget(STATUS_KEY, undefined); return;
     }
     const s = l.state; const m = s.mission;
-    const usage = m && (m.maxTokens !== undefined || m.maxCost !== undefined)
-      ? ` · ${m.pass.tokens}${m.maxTokens ? `/${m.maxTokens}` : ""} tok${m.maxCost ? ` · $${m.pass.cost.toFixed(2)}/$${m.maxCost}` : ""}` : "";
+    const usage = m && m.pass.tokens > 0
+      ? ` · ${m.pass.tokens}${m.maxTokens ? `/${m.maxTokens}` : ""} tok (scouts ${m.pass.childTokens})${m.maxCost ? ` · $${m.pass.cost.toFixed(2)}/$${m.maxCost}` : ""}` : "";
     ctx.ui.setStatus(STATUS_KEY, s.intake ? "Research intake · clarify goal, constraints, deliverables, mode"
-      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.continuations}/${m.maxContinuations} nudges${usage}` : undefined);
+      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.children}/${m.maxChildren} scouts · ${m.pass.continuations}/${m.maxContinuations} nudges${usage}` : undefined);
     const showRuns = m && m.mode !== "web" && (m.phase === "active" || m.phase === "paused") && m.runs.length > 0;
     ctx.ui.setWidget(STATUS_KEY, showRuns ? runTable(m, 8) : undefined, { placement: "aboveEditor" });
   }
@@ -84,7 +127,16 @@ export default function deepResearch(pi: HostAPI): void {
   });
 
   pi.on("tool_call", (event, ctx) => {
-    if (!isMain(ctx)) return;
+    if (!isMain(ctx)) {
+      const bound = bindChild(ctx);
+      if (!bound) return;
+      const m = bound.entry.mission;
+      if (m.id !== bound.missionId) return { block: true, reason: "The Deep Research mission that spawned you has ended; stop and return what you have." };
+      const reason = childBlockedReason(m, event.toolName, event.input)
+        ?? spendReason(m, Date.now(), bound.entry.pendingTokens, bound.entry.pendingCost);
+      return reason ? { block: true, reason } : undefined;
+    }
+    flushChildUsage(ctx);
     const l = load(ctx);
     // Fail closed: if the ledger cannot be read, the research policy state is unknown.
     if (l.error !== undefined) return event.toolName === "deep_research" ? undefined
@@ -101,25 +153,33 @@ export default function deepResearch(pi: HostAPI): void {
     if (m.pass.toolCalls.includes(event.toolCallId)) return;
     const exhausted = budgetReason(m);
     if (exhausted) return { block: true, reason: `${exhausted}. Use the recorded evidence to save an honest verdict; do not start new acquisition.` };
-    persist(makeEvent(m.id, "tool_counted", { toolCallId: event.toolCallId }));
+    const children = event.toolName === "task" ? taskItemCount(event.input) : 0;
+    if (children && m.pass.children + children > m.maxChildren)
+      return { block: true, reason: `Subagent budget: ${m.maxChildren - m.pass.children} of ${m.maxChildren} left this pass, ${children} requested. Spawn fewer scouts or explore yourself.` };
+    persist(makeEvent(m.id, "tool_counted", { toolCallId: event.toolCallId, ...(children ? { children } : {}) }));
     refresh(ctx);
   });
   pi.on("tool_result", (event: ToolResult, ctx) => {
     if (!isMain(ctx) || !isAcquisition(event.toolName)) return;
+    flushChildUsage(ctx);
     const m = activeMission(ctx);
     if (!m || !m.pass.toolCalls.includes(event.toolCallId) || m.receipts.some(r => r.id === event.toolCallId)) return;
     persist(makeEvent(m.id, "receipt_recorded", { receipt: buildReceipt(event, spec => ctx.models.resolve(spec)) }));
-    const child = event.toolName === "task" ? taskUsage(event.details) : undefined;
-    if (child && (child.tokens || child.cost)) persist(makeEvent(m.id, "usage_recorded", { source: event.toolCallId, ...child }));
     refresh(ctx);
   });
   pi.on("message_end", (event, ctx) => {
-    if (!isMain(ctx) || event.message.role !== "assistant") return;
-    const m = activeMission(ctx); const usage = event.message.usage;
-    if (!m || (m.maxTokens === undefined && m.maxCost === undefined) || !usage) return;
-    const tokens = typeof usage.totalTokens === "number" && Number.isFinite(usage.totalTokens) && usage.totalTokens > 0 ? Math.round(usage.totalTokens) : 0;
-    const cost = typeof usage.cost?.total === "number" && Number.isFinite(usage.cost.total) && usage.cost.total > 0 ? usage.cost.total : 0;
-    if (tokens || cost) { persist(makeEvent(m.id, "usage_recorded", { source: "assistant", tokens, cost })); refresh(ctx); }
+    if (event.message.role !== "assistant") return;
+    const { tokens, cost } = usageOf(event.message.usage);
+    if (!tokens && !cost) return;
+    if (!isMain(ctx)) {
+      // Child usage is handed to the main instance; only it can append to the mission's session.
+      const bound = bindChild(ctx);
+      if (bound && bound.entry.mission.id === bound.missionId) { bound.entry.pendingTokens += tokens; bound.entry.pendingCost += cost; }
+      return;
+    }
+    flushChildUsage(ctx);
+    const m = activeMission(ctx);
+    if (m) { persist(makeEvent(m.id, "usage_recorded", { source: "assistant", tokens, cost })); refresh(ctx); }
   });
 
   pi.on("agent_end", (event, ctx) => {
@@ -129,6 +189,7 @@ export default function deepResearch(pi: HostAPI): void {
   });
   pi.on("session_stop", (event, ctx) => {
     if (!isMain(ctx)) return;
+    flushChildUsage(ctx);
     const m = activeMission(ctx);
     if (!m) return;
     if (event.signal.aborted || ["aborted", "error"].includes(event.last_assistant_message?.stopReason ?? "")) {
@@ -235,7 +296,7 @@ export default function deepResearch(pi: HostAPI): void {
         // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`
-          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
+          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Split it into sub-questions; if two or more are independent, fan them out to cheap scouts via deep_research(op='read',view='explore') and one task call before searching yourself. Inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
             "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass.", { attribution: "agent" });
       } catch (error) {
         output(ctx, messageOf(error), "error");

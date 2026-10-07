@@ -10,7 +10,7 @@ No GitHub repository, push, or GitHub Actions run is recorded here.
 | Check | Result |
 |---|---|
 | `npm run check` | Passed with TypeScript 5.8.3, strict/noUncheckedIndexedAccess |
-| `npm test` | **95 tests passed; 0 failed, 0 skipped** |
+| `npm test` | **97 tests passed; 0 failed, 0 skipped** |
 | OMP 18.6.1 interactive load (`omp -e <repo>`) | Extension loaded; `/deep-research status` rendered `{"mission": null}` |
 | OMP 18.6.1 live web missions (2 runs, small budgets) | `read` URL → receipt → evidence → conclusive verdict → `completed`; ledger held `mission_created`, `tool_counted`, `receipt_recorded`, `evidence_added`, `verdict_issued`; `todo` allowed and not counted (`1/4 tools`) |
 | OMP 18.6.1 live `--mode data --harness` mission | Agent wrote `./autoresearch.sh` (wraps an existing `bench.js`, emits `METRIC`), ran `bash autoresearch.sh`; no policy blocks; run `R1` = `baseline` from observed metrics; file + experiment evidence; conclusive verdict |
@@ -21,12 +21,13 @@ No GitHub repository, push, or GitHub Actions run is recorded here.
 | OMP 18.6.1 live web mission with critic, after adding `outputSchema` to the brief | Scout task item carried the brief's `outputSchema`; critic answered in the critic shape; attested critic record and conclusive verdict |
 | OMP 18.6.1 live lifecycle | `pause` (aborted the turn) → `mode data` → `status` (paused, data) → `resume` (new pass, `0/6 tools`) → `cancel`; ledger held `mode_set`, `pass_paused`, `pass_resumed`, `mission_cancelled`. `runs` and `export` worked on a completed mission; `mode` on it was refused |
 | OMP 18.6.1 headless | `omp --mode rpc --no-ui`: `/deep-research --mode web …` as a `prompt` ran to a conclusive verdict and `session_settled`; `status` went to stderr. `omp -p`: `help` printed to stderr; intake and mission start were refused with guidance (the host drops a command's queued turn and never wrote a session file) |
+| OMP 18.6.1 live scout fan-out (`--mode web --max-children 4`, three tools to compare) | Agent read `view:"explore"`, spawned 3 scouts in one `task` call without a model pin; host resolved them to the user's `@smol` role (`alibaba-token-plan/qwen3.8-flash:medium`, `modelRole: "smol"`). Status `3/4 scouts`; `usage_recorded {source:"children"}` events persisted ~1.16M scout tokens out of ~2.0M total; main model re-read leads, recorded 5 evidence items and a conclusive verdict. On two easier questions answerable from one known API the agent chose not to fan out |
 | `bash -n scripts/publish-github.sh` | Passed |
 | `npm pack --dry-run` | Passed; 21 files, packaging only |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
-OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit handling, `setWidget`, print-mode command dispatch, `Usage`, async task delivery, task `outputSchema`) were checked against OMP tag `v18.6.1` sources.
+OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit handling, `setWidget`, print-mode command dispatch, `Usage`, async task delivery, task `outputSchema`, scout `model: "@smol"`, in-process subagents with shared module state and `agent.parentId`) were checked against OMP tag `v18.6.1` sources.
 
 ## What the tests cover
 

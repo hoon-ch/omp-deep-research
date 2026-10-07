@@ -59,11 +59,21 @@ The public `session_stop` hook returns `continue:true` with bounded model contex
 
 Pending user messages take precedence. Aborted signals, terminal agent errors and explicit pause/cancel stop auto-continuation. Automatic host retries marked `willContinue` are left to the host. Existing OMP goal state is never inspected or mutated.
 
-Time, tool, token and cost budgets are checkpoints (next acquisition call, next stop), not process kill switches. Tokens and cost come from main-session `message_end` usage and blocking `task` results; async task children are not metered. See `SECURITY.md`.
+Time, tool, subagent, token and cost budgets are checkpoints (next acquisition call, next stop), not process kill switches. Tokens and cost come from main-session `message_end` usage plus the usage of governed subagents (below). See `SECURITY.md`.
 
 ## Delegation boundary
 
-Parent policy allows explicit native `scout` task requests only and rejects custom eval-defined tools. Child sessions do not own or mutate the parent's ledger. The plugin does not intercept every child operation or enforce an OS sandbox; child read-only behavior relies on the host's scout definition. Researchers must not use delegation to escape a mode or budget restriction.
+Parent policy allows explicit native `scout` task requests only and rejects custom eval-defined tools. Each `task` call costs one acquisition tool call; each of its items costs one unit of `--max-children`. Exploration scouts are not given a `model`, so the host's scout role (`@smol` by default) runs them, while the main session's model judges sources and writes evidence; scout leads are never evidence.
+
+OMP 18.6.1 runs subagents in-process and re-binds this extension per child session, so module state is shared. The main session's instance publishes its mission in a module-level registry keyed by its agent id. A child first seen while that mission is active (resolved through `agent.parentId`, including nested children) is bound to it:
+
+```text
+child tool_call → mission still the bound one and active? → data-mode web block → time/token/cost limits incl. pending child usage
+child message_end (assistant) → pending usage on the registry entry
+next main-session hook → usage_recorded {source:"children"} → pass.tokens/cost and pass.childTokens/childCost
+```
+
+Children first seen with no active mission (ordinary delegation before or after research) are not governed. Child sessions never write the parent's ledger; the main instance persists their usage. The plugin does not enforce an OS sandbox; child read-only behavior relies on the host's scout definition.
 
 ## Hosts and output
 

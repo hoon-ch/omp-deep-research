@@ -4,7 +4,7 @@ export function toolSchema(z: SchemaBuilder) {
   const metric = () => z.object({ name: s(), direction: z.enum(["lower", "higher"]) });
   return z.object({
     op: z.enum(["read", "start", "evidence", "segment", "run", "flag_run", "notes", "critic", "verdict", "export"]),
-    view: z.enum(["summary", "full", "receipts", "runs", "critic", "iterate"]).optional(),
+    view: z.enum(["summary", "full", "receipts", "runs", "explore", "critic", "iterate"]).optional(),
     mission: z.object({ objective: s(), mode: z.enum(["web", "data", "mixed"]), constraints: list(), deliverables: list(), metric: metric().optional() }).optional(),
     limit: z.number().optional(), offset: z.number().optional(), requestId: s().optional(),
     evidence: z.object({ source: z.enum(["web", "file", "experiment"]), title: s(), claim: s(), summary: s(), locator: s(), receiptId: s(), stance: z.enum(["supports", "contradicts", "context"]) }).optional(),

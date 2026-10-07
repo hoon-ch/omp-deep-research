@@ -57,6 +57,7 @@ export function parseCommand(args: string, primaryModel?: string): Command {
       case "--direction": direction = v; break;
       case "--budget": settings.maxContinuations = Number(v); break;
       case "--max-tools": settings.maxToolCalls = Number(v); break;
+      case "--max-children": settings.maxChildren = Number(v); break;
       case "--max-tokens": settings.maxTokens = Number(v); break;
       case "--max-cost": settings.maxCost = Number(v); break;
       case "--max-minutes": settings.maxMinutes = Number(v); break;
@@ -93,7 +94,8 @@ export const HELP = `Deep Research (Gajae-inspired, not OMP's native /autoresear
 /deep-research mode web|data|mixed             change an open mission's mode
 /deep-research reset-ledger                    retire an unreadable research ledger
 Options: --budget 0..8 (default 6); --max-tools 1..1000 (default 60);
---max-minutes 1..240 (default 20); --max-tokens N; --max-cost USD;
+--max-children 0..32 subagents per pass (default 8);
+--max-minutes 1..240 (default 20); --max-tokens N; --max-cost USD (both include subagents);
 --critic provider/model; --metric <name> --direction lower|higher;
 --constraint "..."; --deliverable "...".
 Execution is OFF by default. --harness (data/mixed) allows writing only

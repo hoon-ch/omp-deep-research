@@ -21,13 +21,6 @@ function reportedResults(details: unknown): { models: string[]; ids: string[] } 
     ids: results.flatMap(r => typeof r.id === "string" ? [r.id] : []),
   };
 }
-/** Usage the host aggregated for blocking task children (`details.usage`). Async children report only on delivery. */
-export function taskUsage(details: unknown): { tokens: number; cost: number } | undefined {
-  if (!isRecord(details) || !isRecord(details.usage)) return undefined;
-  const tokens = details.usage.totalTokens; const cost = isRecord(details.usage.cost) ? details.usage.cost.total : undefined;
-  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens < 0) return undefined;
-  return { tokens: Math.round(tokens), cost: typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : 0 };
-}
 export function buildReceipt(event: ToolResult, resolve: (spec: string) => ModelIdentity | undefined, at = new Date().toISOString()): Receipt {
   const output = event.content.filter(c => c.type === "text").map(c => c.text ?? "").join("\n");
   const parsed = parseHarnessOutput(output);

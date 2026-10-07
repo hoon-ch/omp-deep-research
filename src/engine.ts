@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
+import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
@@ -9,7 +9,7 @@ const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "miss
 export const DEFAULT_SETTINGS: MissionSettings = {
   constraints: ["Research only; do not implement or modify product code."],
   deliverables: ["A structured verdict with evidence, caveats, and a reproducible report."],
-  maxContinuations: 6, maxToolCalls: 60, maxMinutes: 20, allowExec: false, allowHarness: false,
+  maxContinuations: 6, maxToolCalls: 60, maxChildren: 8, maxMinutes: 20, allowExec: false, allowHarness: false,
 };
 
 export function validateMetric(raw: unknown, name = "metric"): MetricContract {
@@ -26,6 +26,7 @@ export function validateSettings(raw: unknown): MissionSettings {
     constraints: strings(c.constraints, "constraints"), deliverables: strings(c.deliverables, "deliverables"),
     maxContinuations: integer(c.maxContinuations, "maxContinuations", 0, 8),
     maxToolCalls: integer(c.maxToolCalls, "maxToolCalls", 1, 1000),
+    maxChildren: integer(c.maxChildren, "maxChildren", 0, 32),
     maxMinutes: integer(c.maxMinutes, "maxMinutes", 1, 240), allowExec: c.allowExec, allowHarness: c.allowHarness,
     ...(c.maxTokens !== undefined ? { maxTokens: integer(c.maxTokens, "maxTokens", 1000, 1_000_000_000) } : {}),
     ...(c.maxCost !== undefined ? { maxCost: positiveNumber(c.maxCost, "maxCost", 10_000) } : {}),
@@ -52,7 +53,8 @@ export function validateConfig(raw: unknown): MissionConfig {
   return { ...settings, objective: text(c.objective, "objective", 6000), mode, ...(spec ? { spec } : {}) };
 }
 function newPass(config: MissionConfig, at: string): Pass {
-  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [], tokens: 0, cost: 0 };
+  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [],
+    children: 0, tokens: 0, cost: 0, childTokens: 0, childCost: 0 };
 }
 export function current(state: ResearchState): Mission {
   if (!state.mission) throw new ResearchError(state.intake
@@ -96,7 +98,11 @@ function apply(state: ResearchState, event: LedgerEvent): void {
     case "pass_resumed": m.phase = "active"; m.pass = structuredClone(d.pass) as Pass; delete m.pauseReason; break;
     case "pass_paused": m.phase = "paused"; m.pauseReason = text(d.reason, "reason"); break;
     case "mission_cancelled": m.phase = "cancelled"; m.pauseReason = text(d.reason, "reason"); break;
-    case "tool_counted": m.pass.toolCalls.push(text(d.toolCallId, "toolCallId")); break;
+    case "tool_counted": {
+      m.pass.toolCalls.push(text(d.toolCallId, "toolCallId"));
+      if (d.children !== undefined) m.pass.children += integer(d.children, "children", 0, 1000);
+      break;
+    }
     case "receipt_recorded": m.receipts.push(structuredClone(d.receipt) as Receipt); break;
     case "continuation_requested": m.pass.continuations++; m.pass.stopIds.push(text(d.stopId, "stopId")); break;
     case "evidence_added": m.evidence.push(structuredClone(d.evidence) as Evidence); break;
@@ -112,7 +118,12 @@ function apply(state: ResearchState, event: LedgerEvent): void {
       r.flagReason = text(d.reason, "reason"); break;
     }
     case "notes_updated": m.notes = typeof d.notes === "string" ? d.notes : ""; break;
-    case "usage_recorded": m.pass.tokens += integer(d.tokens, "tokens", 0, Number.MAX_SAFE_INTEGER); m.pass.cost += positiveNumber(d.cost, "cost", Number.MAX_VALUE, true); break;
+    case "usage_recorded": {
+      const tokens = integer(d.tokens, "tokens", 0, Number.MAX_SAFE_INTEGER); const cost = positiveNumber(d.cost, "cost", Number.MAX_VALUE, true);
+      m.pass.tokens += tokens; m.pass.cost += cost;
+      if (d.source === "children") { m.pass.childTokens += tokens; m.pass.childCost += cost; }
+      break;
+    }
     case "critic_recorded": m.critics.push(structuredClone(d.critic) as Critic); break;
     case "verdict_issued": {
       const v = structuredClone(d.verdict) as Verdict;
@@ -192,8 +203,14 @@ export function lifecycleEvent(state: ResearchState, op: "resume" | "pause" | "c
 export function budgetReason(m: Mission, now = Date.now()): string | undefined {
   if (now >= Date.parse(m.pass.deadlineAt)) return "Mission pass wall-clock budget exhausted";
   if (m.pass.toolCalls.length >= m.maxToolCalls) return "Mission pass acquisition-tool budget exhausted";
-  if (m.maxTokens !== undefined && m.pass.tokens >= m.maxTokens) return `Mission pass token budget exhausted (${m.pass.tokens}/${m.maxTokens})`;
-  if (m.maxCost !== undefined && m.pass.cost >= m.maxCost) return `Mission pass cost budget exhausted ($${m.pass.cost.toFixed(4)}/$${m.maxCost})`;
+  return spendReason(m, now);
+}
+/** Time and usage limits that also bind subagents; `pendingTokens/Cost` is subagent usage not yet persisted by the parent. */
+export function spendReason(m: Mission, now = Date.now(), pendingTokens = 0, pendingCost = 0): string | undefined {
+  if (now >= Date.parse(m.pass.deadlineAt)) return "Mission pass wall-clock budget exhausted";
+  const tokens = m.pass.tokens + pendingTokens; const cost = m.pass.cost + pendingCost;
+  if (m.maxTokens !== undefined && tokens >= m.maxTokens) return `Mission pass token budget exhausted (${tokens}/${m.maxTokens})`;
+  if (m.maxCost !== undefined && cost >= m.maxCost) return `Mission pass cost budget exhausted ($${cost.toFixed(4)}/$${m.maxCost})`;
   return undefined;
 }
 export function summary(state: ResearchState): unknown {
@@ -203,7 +220,7 @@ export function summary(state: ResearchState): unknown {
   return { id: m.id, objective: m.objective, mode: m.mode, phase: m.phase, pauseReason: m.pauseReason, spec: m.spec,
     constraints: m.constraints, deliverables: m.deliverables, allowExec: m.allowExec, allowHarness: m.allowHarness, criticModel: m.criticModel,
     pass: { ...m.pass, toolCalls: m.pass.toolCalls.length },
-    limits: { continuations: m.maxContinuations, toolCalls: m.maxToolCalls, minutes: m.maxMinutes, tokens: m.maxTokens ?? null, cost: m.maxCost ?? null },
+    limits: { continuations: m.maxContinuations, toolCalls: m.maxToolCalls, children: m.maxChildren, minutes: m.maxMinutes, tokens: m.maxTokens ?? null, cost: m.maxCost ?? null },
     counts: { receipts: m.receipts.length, evidence: m.evidence.length, runs: m.runs.length, segments: m.segments.length },
     segment: { index: currentSegment(m).index, metric: metricContract(m) ?? null, baselineRunId: baselineRun(m)?.id ?? null,
       bestRunId: bestRun(m)?.id ?? null, effectToNoise: effectToNoise(m) },
@@ -237,7 +254,7 @@ function startMission(intake: Intake | undefined, raw: unknown, requestId: strin
   return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
 }
 function readView(state: ResearchState, input: Record<string, unknown>): unknown {
-  const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "runs", "critic", "iterate"], "view");
+  const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "runs", "explore", "critic", "iterate"], "view");
   if (view === "summary") return summary(state);
   if (view === "full") return state.mission ?? null;
   const m = current(state);
@@ -249,6 +266,9 @@ function readView(state: ResearchState, input: Record<string, unknown>): unknown
   }
   if (view === "runs") return { segments: segmentReports(m) };
   const mission = { objective: m.objective, mode: m.mode, constraints: m.constraints, deliverables: m.deliverables };
+  if (view === "explore") return { instructions: EXPLORE_INSTRUCTIONS, outputSchema: EXPLORE_OUTPUT_SCHEMA,
+    childrenLeft: Math.max(0, m.maxChildren - m.pass.children),
+    snapshot: { ...mission, knownLocators: [...new Set(m.evidence.map(e => e.locator))], notes: m.notes } };
   if (view === "critic") return { instructions: CRITIC_INSTRUCTIONS, outputSchema: CRITIC_OUTPUT_SCHEMA, criticModel: m.criticModel ?? null, evidenceDigest: evidenceDigest(m),
     evidenceIds: m.evidence.map(e => e.id), snapshot: { ...mission, evidence: m.evidence, segments: segmentReports(m), notes: m.notes } };
   const report = segmentReports(m).at(-1)!;

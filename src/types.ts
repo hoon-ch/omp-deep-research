@@ -16,8 +16,10 @@ export interface MissionSettings {
   deliverables: string[];
   maxContinuations: number;
   maxToolCalls: number;
+  /** Per-pass cap on spawned subagents (each `task` item counts once). */
+  maxChildren: number;
   maxMinutes: number;
-  /** Optional per-pass caps on main-session model usage (tokens, provider-reported USD), checked at checkpoints. */
+  /** Optional per-pass caps on model usage (tokens, provider-reported USD), main session plus its subagents. */
   maxTokens?: number;
   maxCost?: number;
   allowExec: boolean;
@@ -48,9 +50,13 @@ export interface Pass {
   continuations: number;
   toolCalls: string[];
   stopIds: string[];
-  /** Main-session assistant usage accumulated from message_end plus task-reported child usage. */
+  /** Subagents spawned in this pass. */
+  children: number;
+  /** Usage in this pass: main-session assistant messages plus subagent messages (children* is the subagent share). */
   tokens: number;
   cost: number;
+  childTokens: number;
+  childCost: number;
 }
 export interface Receipt {
   id: string;
@@ -189,7 +195,7 @@ export interface MissionInput {
 }
 export interface ToolInput {
   op: "read" | "start" | "evidence" | "segment" | "run" | "flag_run" | "notes" | "critic" | "verdict" | "export";
-  view?: "summary" | "full" | "receipts" | "runs" | "critic" | "iterate";
+  view?: "summary" | "full" | "receipts" | "runs" | "explore" | "critic" | "iterate";
   mission?: MissionInput;
   limit?: number;
   offset?: number;
