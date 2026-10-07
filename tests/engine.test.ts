@@ -57,9 +57,24 @@ test("a failed fetch cannot support source contents", () => {
   assert.throws(() => l.evidence({ receiptId: r.id }), /failed fetch/);
 });
 test("failed experiments can be recorded as failure evidence", () => {
-  const l = new Ledger(); l.start({ mode: "mixed" }); const r = l.receipt({ isError: true });
+  const l = new Ledger(); l.start({ mode: "mixed" }); const r = l.receipt({ tool: "bash", isError: true });
   l.evidence({ source: "experiment", locator: "local://run-output", receiptId: r.id });
   assert.equal(l.state().mission!.evidence.length, 1);
+});
+test("file evidence must come from reading the cited files, never from a scout report", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const file = (receipt: { id: string }, locator: string) => l.op({ op: "evidence", evidence: { source: "file", title: "t", claim: `c ${locator}`, summary: "s", locator, receiptId: receipt.id, stance: "supports" } });
+  const scout = l.receipt({ tool: "read", paths: [], sourceRefs: ["agent://FirmwareWakePipeline"] });
+  assert.throws(() => file(scout, "firmware/audio_i2s.c:1429-1444"), /Scout reports/);
+  assert.throws(() => file(l.receipt({ tool: "task" }), "firmware/audio_i2s.c"), /Scout reports/);
+  const log = l.receipt({ tool: "read", paths: ["/repo/docs/validation-log.md:125-190"] });
+  assert.throws(() => file(log, "bridge/session_fsm.py:780-829"), /did not read \/repo\/bridge\/session_fsm\.py/);
+  file(log, "docs/validation-log.md:130-133");
+  const grep = l.receipt({ tool: "grep", paths: ["/repo/firmware/main"] });
+  file(grep, "firmware/main/wake.cc:8-11,88; firmware/main/nvs_cfg.c:4");
+  assert.throws(() => file(grep, "firmware/main/wake.cc:8; bridge/x.py:2"), /bridge\/x\.py/);
+  assert.equal(l.state().mission!.evidence.length, 2);
+  assert.throws(() => l.op({ op: "evidence", evidence: { source: "experiment", title: "t", claim: "c", summary: "s", locator: "run", receiptId: scout.id, stance: "context" } }), /Experiment evidence/);
 });
 test("rejects javascript URLs and embedded credentials", () => {
   for (const locator of ["javascript:alert(1)", "https://user:password@example.org/"]) {

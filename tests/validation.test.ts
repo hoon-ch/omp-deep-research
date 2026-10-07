@@ -49,11 +49,20 @@ test("task receipts record pinned or reported models and spawned agent ids", () 
   const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : undefined;
   const r = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,
     input: { context: "c", tasks: [{ agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }] },
-    content: [{ type: "text", text: "Spawned 2 background agents using scout.\n- `Crit` (job `j1`)\n- `Crit-2` (job `j2`)" }] }, resolve);
+    content: [{ type: "text", text: "Spawned 2 background agents using scout.\n- `Crit` (job `j1`)\n- `Crit-2` (job `j2`)" }] }, resolve, "/repo");
   assert.deepEqual(r.models, ["test/critic"]); assert.deepEqual(r.agentIds, ["Crit", "Crit-2"]);
   const blocking = buildReceipt({ toolName: "task", toolCallId: "t2", isError: false, input: { agent: "scout" }, content: [{ type: "text", text: "done" }],
-    details: { results: [{ id: "Rev", resolvedModel: "test/critic:high" }] } }, resolve);
+    details: { results: [{ id: "Rev", resolvedModel: "test/critic:high" }] } }, resolve, "/repo");
   assert.deepEqual(blocking.models, ["test/critic"]); assert.deepEqual(blocking.agentIds, ["Rev"]);
+});
+test("read-like receipts record the local paths they covered; internal URIs and URLs are not local", () => {
+  const none = () => undefined;
+  const read = (path: unknown, tool = "read") => buildReceipt({ toolName: tool, toolCallId: "r", isError: false, input: { path }, content: [{ type: "text", text: "x" }] }, none, "/repo");
+  assert.deepEqual(read("docs/log.md:125-190").paths, ["/repo/docs/log.md:125-190"]);
+  assert.deepEqual(read("agent://FirmwareWakePipeline").paths, []);
+  assert.deepEqual(read("src;https://e.org/x;/abs/f.ts", "grep").paths, ["/repo/src", "/abs/f.ts"]);
+  assert.deepEqual(read(undefined, "grep").paths, ["/repo"]);
+  assert.equal(read("x", "web_search").paths, undefined);
 });
 test("canonical URL strips tracking only, preserving meaningful parameters", () => {
   assert.equal(canonicalUrl("https://EXAMPLE.org/p?b=2&utm_source=x&a=1#part"), "https://example.org/p?a=1&b=2");

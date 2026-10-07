@@ -70,6 +70,8 @@ export interface Receipt {
   metricError?: string;
   asi: Record<string, AsiValue>;
   sourceRefs: string[];
+  /** For local read tools: absolute paths the call covered (selectors kept); the basis for file-evidence checks. */
+  paths?: string[];
   /** For `task` receipts: host-resolved `provider/id` models the call pinned or the host reported as used. */
   models?: string[];
   /** For `task` receipts: agent ids the spawn reported, so a later `read agent://<id>` can be linked back. */

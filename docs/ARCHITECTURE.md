@@ -39,7 +39,7 @@ opened source receipt → mode + URL/receipt validation → evidence_added
 current evidence IDs → referenced findings (contradictions confronted) → verdict_issued
 ```
 
-Web search snippets and `github` results are rejected as original-source receipts. A web locator must be observed in a `read` receipt for that URL (the requested `path` or a URL in its output). This is useful provenance, not a truth oracle. A deceptive source or a misinterpreted source can still produce an incorrect claim.
+Web search snippets, `github` results, `task` summaries and scout reports are rejected as original-source receipts. A web locator must be observed in a `read` receipt for that URL (the requested `path` or a URL in its output). A file locator (`a.ts:10-20; b/c.md:4`) must be covered by the receipt's recorded local paths: receipts from `read`/`grep`/`find`/`glob`/`ast_grep` store the absolute paths the call covered (a search without a path covers the session root; `agent://`, other internal URIs and URLs cover nothing), and each cited file must equal one of them or sit under a covered directory. Experiment evidence needs a `bash`/`eval` run or a local result-file read. This is useful provenance, not a truth oracle. A deceptive source or a misinterpreted source can still produce an incorrect claim.
 
 The receipt preview is at most 2,400 characters; the SHA-256 digest covers the full text delivered by the host (which may itself already be truncated). Input arguments are hashed, not copied wholesale. Source paths and observed URLs are retained. Recent receipts are paginated to avoid repeatedly injecting the full ledger into context.
 

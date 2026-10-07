@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, ENTRY_TYPE, makeEvent, prepareOperation, restore, startEvent } from "../src/engine.ts";
 import type { LedgerEvent, MissionConfig, Receipt, SessionEntry } from "../src/types.ts";
 export const NOW = "2026-10-06T00:00:00.000Z";
+export const CWD = "/repo";
 export class Ledger {
   entries: SessionEntry[] = [];
   serial = 0;
@@ -15,7 +16,7 @@ export class Ledger {
     this.add(makeEvent(this.state().mission!.id, "receipt_recorded", { receipt: r }, NOW)); return r;
   }
   op(input: unknown, id = `call-${++this.serial}`) {
-    const p = prepareOperation(this.state(), input, id, "test/main", NOW);
+    const p = prepareOperation(this.state(), input, id, "test/main", CWD, NOW);
     if (p.event) this.add(p.event); return p.result;
   }
   evidence(overrides: Record<string, unknown> = {}) {

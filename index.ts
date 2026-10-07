@@ -164,7 +164,7 @@ export default function deepResearch(pi: HostAPI): void {
     flushChildUsage(ctx);
     const m = activeMission(ctx);
     if (!m || !m.pass.toolCalls.includes(event.toolCallId) || m.receipts.some(r => r.id === event.toolCallId)) return;
-    persist(makeEvent(m.id, "receipt_recorded", { receipt: buildReceipt(event, spec => ctx.models.resolve(spec)) }));
+    persist(makeEvent(m.id, "receipt_recorded", { receipt: buildReceipt(event, spec => ctx.models.resolve(spec), ctx.cwd) }));
     refresh(ctx);
   });
   pi.on("message_end", (event, ctx) => {
@@ -221,7 +221,7 @@ export default function deepResearch(pi: HostAPI): void {
         if (!isMain(ctx)) throw new ResearchError("Only the main session owns research state; return your findings to the parent instead");
         const s = state(ctx);
         const raw = object(input);
-        const prepared = prepareOperation(s, raw, toolCallId, modelId(ctx));
+        const prepared = prepareOperation(s, raw, toolCallId, modelId(ctx), ctx.cwd);
         // Persist before returning success. If persistence throws, the caller sees an error.
         if (prepared.event) persist(prepared.event);
         // A mission started mid-turn has not seen the mission system policy yet; return it with the start result.

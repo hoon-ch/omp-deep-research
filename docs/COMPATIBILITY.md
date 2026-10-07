@@ -53,7 +53,7 @@ The host contract uses `pi.zod`, `registerTool`, `registerCommand`, `appendEntry
 | Critic gating | Latest critic receipt attached to the verdict; no gating | A configured critic must `pass` the current evidence/run/segment digest before `conclusive` |
 | auto-iterate planner | Fragment prompt; no runtime code | `view:"iterate"` returns adapted planner instructions + current-segment snapshot (baseline, best, recent and flagged runs, ASI, harness contract) for the agent or a scout |
 | Verdict | Free-form `status` object, string `evidence[]`/`caveats[]`, `evaluator`; not idempotent | `disposition` + `confidence` + findings citing evidence IDs + caveats; `requestId` idempotent. A conclusive verdict must cite or address (by ID) every contradicting evidence item |
-| Evidence | Free strings in the verdict | Records bound to observed tool receipts; web evidence needs a `read` of that URL |
+| Evidence | Free strings in the verdict | Records bound to observed tool receipts; web evidence needs a `read` of that URL; file evidence needs a local read/search receipt covering every cited file (scout reports at `agent://` never count) |
 | Mode-based tool gating | Data-context loader gated by mode, not wired; no tool gating | `data` mode blocks `web_search`, `github` and any tool call whose `path` contains a URL |
 | Continuation | Agent drives a GJC goal by instruction; no autoresearch nudge budget | Bounded `session_stop` continuation per pass (`--budget`), plus tool, wall-clock and optional token/cost checkpoints |
 | Conclusive auto-clear | Instruction to run `clear` after the goal completes | Completed mission stays visible until explicit `clear` or a new start |

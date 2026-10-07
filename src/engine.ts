@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
+import { coversFile, LOCAL_READ_TOOLS, locatorFiles } from "./receipts.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
@@ -280,7 +281,7 @@ function readView(state: ResearchState, input: Record<string, unknown>): unknown
     notes: m.notes } };
 }
 /** Pure operation preparation; the adapter persists the event before reporting success. */
-export function prepareOperation(state: ResearchState, raw: unknown, toolCallId: string, evaluator: string, at = new Date().toISOString()): Prepared {
+export function prepareOperation(state: ResearchState, raw: unknown, toolCallId: string, evaluator: string, cwd: string, at = new Date().toISOString()): Prepared {
   const input = object(raw);
   const op = choice(input.op, ["read", "start", "evidence", "segment", "run", "flag_run", "notes", "critic", "verdict", "export"], "op");
   if (op === "read") return { result: readView(state, input) };
@@ -308,6 +309,16 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
         if (r.tool !== "read") throw new ResearchError("Open the original web source with read before recording evidence; search snippets, github results and task summaries are leads only");
         const observed = r.sourceRefs.some(ref => { try { return canonicalUrl(ref) === locator; } catch { return false; } });
         if (!observed) throw new ResearchError("Web locator was not observed in this receipt; read that exact URL first");
+      } else if (source === "file") {
+        // Scout reports (`read agent://…`) and task summaries are leads; file evidence needs the file itself.
+        if (!Object.hasOwn(LOCAL_READ_TOOLS, r.tool) || !r.paths?.length)
+          throw new ResearchError("File evidence needs a receipt from read/grep/find/glob/ast_grep of a local path. Scout reports (agent://…) and task summaries are leads: read the cited file yourself first");
+        const files = locatorFiles(locator, cwd);
+        if (!files.length) throw new ResearchError("File evidence locator must name the file(s) it cites, e.g. src/a.ts:10-20; docs/b.md:4");
+        const unread = files.filter(f => !r.paths!.some(p => coversFile(p, f)));
+        if (unread.length) throw new ResearchError(`Receipt ${r.id} did not read ${unread.join(", ")}; read the cited file(s) and use that receipt`);
+      } else if (r.tool === "task" || (Object.hasOwn(LOCAL_READ_TOOLS, r.tool) ? !r.paths?.length : r.tool !== "bash" && r.tool !== "eval")) {
+        throw new ResearchError("Experiment evidence needs the run's own output (bash/eval) or a local result file read; scout reports and task summaries are leads");
       }
       const claim = text(e.claim, "claim"); const stance = choice(e.stance, ["supports", "contradicts", "context"], "stance");
       const fingerprint = hash({ source, locator, claim: claim.replace(/\s+/g, " ").toLowerCase(), stance });

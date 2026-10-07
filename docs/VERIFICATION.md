@@ -1,6 +1,6 @@
 # Verification record
 
-**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.0`
+**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.1`
 
 This is a record of verification, not a production-readiness claim.
 Published at <https://github.com/hoon-ch/omp-deep-research> (tag `v0.2.0`); GitHub Actions passed for `main` and `v0.2.0` (Node 22 and 24).
@@ -10,7 +10,7 @@ Published at <https://github.com/hoon-ch/omp-deep-research> (tag `v0.2.0`); GitH
 | Check | Result |
 |---|---|
 | `npm run check` | Passed with TypeScript 5.8.3, strict/noUncheckedIndexedAccess |
-| `npm test` | **93 tests passed; 0 failed, 0 skipped** |
+| `npm test` | **95 tests passed; 0 failed, 0 skipped** |
 | OMP 18.6.1 interactive load (`omp -e <repo>`) | Extension loaded; `/deep-research status` rendered `{"mission": null}` |
 | OMP 18.6.1 live web missions (2 runs, small budgets) | `read` URL → receipt → evidence → conclusive verdict → `completed`; ledger held `mission_created`, `tool_counted`, `receipt_recorded`, `evidence_added`, `verdict_issued`; `todo` allowed and not counted (`1/4 tools`) |
 | OMP 18.6.1 live `--mode data --harness` mission | Agent wrote `./autoresearch.sh` (wraps an existing `bench.js`, emits `METRIC`), ran `bash autoresearch.sh`; no policy blocks; run `R1` = `baseline` from observed metrics; file + experiment evidence; conclusive verdict |
@@ -24,6 +24,8 @@ Published at <https://github.com/hoon-ch/omp-deep-research> (tag `v0.2.0`); GitH
 | OMP 18.6.1 live scout fan-out (`--mode web --max-children 4`, three tools to compare) | Agent read `view:"explore"`, spawned 3 scouts in one `task` call without a model pin; host resolved them through the user's `@smol` role (`modelRole: "smol"`, a cheap flash-class model). Status `3/4 scouts`; `usage_recorded {source:"children"}` events persisted ~1.16M scout tokens out of ~2.0M total; main model re-read leads, recorded 5 evidence items and a conclusive verdict. On two easier questions answerable from one known API the agent chose not to fan out |
 | `npm pack --dry-run` | Passed; 21 files, packaging only |
 | Plugin install from GitHub | `omp plugin install github:hoon-ch/omp-deep-research#v0.2.0` succeeded on macOS/OMP 18.7.0 and Linux/OMP 18.6.1 (the Linux host first needed `bun` on `PATH`; OMP shells out to it). `omp plugin link <checkout>` on macOS/OMP 18.7.0. On all three, `omp read skill://deep-research` resolved the skill from the plugin root and an RPC session answered `/deep-research help` and `status` |
+| Field report (0.2.0, respeaker repo, intake → `mixed`, 5 scouts) | Two file evidence items were backed by a scout report (`read agent://FirmwareWakePipeline`) and by a receipt for a different file (`docs/validation-log.md` cited for `session_fsm.py`); 4 of 7 findings cited them. Fixed in 0.2.1 |
+| OMP 18.7.0 live `--mode data` mission after the 0.2.1 fix (this repository) | All 4 file evidence items cited `read`/`grep` receipts whose recorded paths covered the locator files; conclusive verdict. File-level coverage only: line ranges inside a read file are not checked |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
