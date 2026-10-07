@@ -41,6 +41,7 @@ OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit hand
 - Rejection of search snippets as original web evidence, failed reads and fabricated source locators.
 - Actual output parsing for `METRIC`, numeric validation, baseline/keep/discard/crash/checks_failed, invalid-run exclusion.
 - Token/cost budgets from `message_end` usage; run widget content; stderr output and print-mode refusal without a UI.
+- Subagents: each `task` item counts against `--max-children` (oversized batches blocked, explore brief reports `childrenLeft`); a scout bound to an active `data` mission is denied web tools, its usage is persisted only by the main session as `children` usage, it is blocked once the mission pauses, and a scout first seen with no active mission is not governed.
 - No load-time side effects, no existing `/autoresearch` replacement, and no dynamic source material interpolated into the system prompt.
 - Explicit-only report creation, traversal/symlink rejection, no report overwrite, valid Markdown/JSON/JSONL output, escaped untrusted text.
 - Publishing script syntax, private default, explicit public selection and rejection of unsupported flags.
