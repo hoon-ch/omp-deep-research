@@ -3,7 +3,7 @@
 **Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.1`
 
 This is a record of verification, not a production-readiness claim.
-Published at <https://github.com/hoon-ch/omp-deep-research> (tag `v0.2.0`); GitHub Actions passed for `main` and `v0.2.0` (Node 22 and 24).
+Published at <https://github.com/hoon-ch/omp-deep-research> (tags `v0.2.0`, `v0.2.1`); GitHub Actions passed for `main` and both tags (Node 22 and 24). `v0.2.1` is installed on all three hosts (link on the development Mac).
 
 ## Executed locally
 
