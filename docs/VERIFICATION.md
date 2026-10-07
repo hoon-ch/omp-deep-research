@@ -3,7 +3,7 @@
 **Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.2`
 
 This is a record of verification, not a production-readiness claim.
-Published at <https://github.com/hoon-ch/omp-deep-research>. Historical tags `v0.2.0` and `v0.2.1` passed GitHub Actions (Node 22 and 24); rollout evidence for `v0.2.2` is recorded below.
+Published at <https://github.com/hoon-ch/omp-deep-research> (latest tag `v0.2.2`, release commit `228f412`). GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/37570756359) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/37570756488) (Node 22 and 24). All three hosts report `omp-deep-research@0.2.2`.
 
 ## Executed locally
 
@@ -30,8 +30,9 @@ Published at <https://github.com/hoon-ch/omp-deep-research>. Historical tags `v0
 | OMP 18.7.0 live permission commands on that paused mission | `allow exec` → `allow harness` → `deny` recorded replacement profiles without another agent turn or pass. Same mission id, evidence and runs remained. `mode web` after deny succeeded; `allow exec` in web mode was rejected without a new ledger event. OMP exited 0 |
 | OMP 18.7.0 live permissionless `--spec plan.md` (mixed mode, RPC) | Agent explained the permission commands, created no harness, and saved an inconclusive verdict; OMP exited 0 |
 | Throwaway intake-start smoke against the real extension factory | Bare command opened intake; `op:"start"` in data mode returned the permission guidance in its result while both permission flags remained false. This was an adapter smoke, not an interactive `ask` UI run |
+| v0.2.2 deployment and installed-host smoke | `nima-mbp` (OMP 18.7.0) and `nimarchy` (OMP 18.6.1) installed the GitHub tag; the development Mac (OMP 18.7.0) uses the linked checkout. All three resolved the updated skill, answered RPC `help`/`status`, and rejected `allow harness`/`deny` with no mission without invoking a model or adding research events; all RPC processes exited 0 |
 
-Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
+Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**. Earlier live runs used OMP **18.6.1**; the v0.2.1/v0.2.2 local smoke runs used **18.7.0** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
 OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit handling, `setWidget`, print-mode command dispatch, `Usage`, async task delivery, task `outputSchema`, scout `model: "@smol"`, in-process subagents with shared module state and `agent.parentId`) were checked against OMP tag `v18.6.1` sources.
 
