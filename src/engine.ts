@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
-import { coversFile, LOCAL_READ_TOOLS, locatorFiles } from "./receipts.ts";
+import { LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
-const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "execution_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
+const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "execution_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "children_released", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
 export const DEFAULT_SETTINGS: MissionSettings = {
   constraints: ["Research only; do not implement or modify product code."],
   deliverables: ["A structured verdict with evidence, caveats, and a reproducible report."],
@@ -108,6 +108,8 @@ function apply(state: ResearchState, event: LedgerEvent): void {
       if (d.children !== undefined) m.pass.children += integer(d.children, "children", 0, 1000);
       break;
     }
+    // Subagents are charged when a task call starts; a call the host rejected or that spawned fewer agents gives them back.
+    case "children_released": m.pass.children = Math.max(0, m.pass.children - integer(d.children, "children", 0, 1000)); break;
     case "receipt_recorded": m.receipts.push(structuredClone(d.receipt) as Receipt); break;
     case "continuation_requested": m.pass.continuations++; m.pass.stopIds.push(text(d.stopId, "stopId")); break;
     case "evidence_added": m.evidence.push(structuredClone(d.evidence) as Evidence); break;
@@ -271,6 +273,14 @@ function startMission(intake: Intake | undefined, raw: unknown, requestId: strin
   const data = { config, pass: newPass(config, at) };
   return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
 }
+/**
+ * The critic brief's snapshot. The digest travels inside it, so the critic's answer names the snapshot it reviewed, and
+ * its `snapshotHash` lets a task receipt show that the critic was handed exactly this material.
+ */
+function criticSnapshot(m: Mission) {
+  return { evidenceDigest: evidenceDigest(m), objective: m.objective, mode: m.mode, constraints: m.constraints, deliverables: m.deliverables,
+    evidence: m.evidence, segments: segmentReports(m), notes: m.notes };
+}
 function readView(state: ResearchState, input: Record<string, unknown>): unknown {
   const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "runs", "explore", "critic", "iterate"], "view");
   if (view === "summary") return summary(state);
@@ -287,8 +297,8 @@ function readView(state: ResearchState, input: Record<string, unknown>): unknown
   if (view === "explore") return { instructions: EXPLORE_INSTRUCTIONS, outputSchema: EXPLORE_OUTPUT_SCHEMA,
     childrenLeft: Math.max(0, m.maxChildren - m.pass.children),
     snapshot: { ...mission, knownLocators: [...new Set(m.evidence.map(e => e.locator))], notes: m.notes } };
-  if (view === "critic") return { instructions: CRITIC_INSTRUCTIONS, outputSchema: CRITIC_OUTPUT_SCHEMA, criticModel: m.criticModel ?? null, evidenceDigest: evidenceDigest(m),
-    evidenceIds: m.evidence.map(e => e.id), snapshot: { ...mission, evidence: m.evidence, segments: segmentReports(m), notes: m.notes } };
+  if (view === "critic") return { instructions: CRITIC_INSTRUCTIONS, outputSchema: CRITIC_OUTPUT_SCHEMA, criticModel: m.criticModel ?? null,
+    evidenceIds: m.evidence.map(e => e.id), snapshot: criticSnapshot(m) };
   const report = segmentReports(m).at(-1)!;
   return { instructions: ITERATE_INSTRUCTIONS, outputSchema: ITERATE_OUTPUT_SCHEMA, snapshot: { ...mission, segment: report.segment.index, metric: report.metric ?? null,
     baselineRunId: report.baselineId, bestRunId: report.bestId, effectToNoise: report.effectToNoise, counts: report.counts,
@@ -317,24 +327,42 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
   switch (op) {
     case "evidence": {
       const e = object(input.evidence, "evidence");
-      const source = choice(e.source, ["web", "file", "experiment"], "evidence.source");
+      const source = choice(e.source, ["web", "file", "listing", "experiment"], "evidence.source");
       if ((m.mode === "web" && source !== "web") || (m.mode === "data" && source === "web")) throw new ResearchError(`Evidence source ${source} is not allowed in ${m.mode} mode`);
       const r = receipt(m, e.receiptId);
       if (r.isError && source !== "experiment") throw new ResearchError("A failed fetch/read is not evidence of source contents");
       const locator = source === "web" ? canonicalUrl(text(e.locator, "locator", 4000)) : text(e.locator, "locator", 4000);
       if (source === "web") {
         if (r.tool !== "read") throw new ResearchError("Open the original web source with read before recording evidence; search snippets, github results and task summaries are leads only");
-        const observed = r.sourceRefs.some(ref => { try { return canonicalUrl(ref) === locator; } catch { return false; } });
-        if (!observed) throw new ResearchError("Web locator was not observed in this receipt; read that exact URL first");
+        // Links inside a page are leads: only the URL the read requested (or the host-reported final URL) was read.
+        const opened = (r.opened ?? []).some(ref => { try { return canonicalUrl(ref) === locator; } catch { return false; } });
+        if (!opened) throw new ResearchError("This receipt did not open that URL (links found inside a page are leads); read that exact URL first");
       } else if (source === "file") {
         // Scout reports (`read agent://…`) and task summaries are leads; file evidence needs the file itself.
-        if (!Object.hasOwn(LOCAL_READ_TOOLS, r.tool) || !r.paths?.length)
-          throw new ResearchError("File evidence needs a receipt from read/grep/find/glob/ast_grep of a local path. Scout reports (agent://…) and task summaries are leads: read the cited file yourself first");
-        const files = locatorFiles(locator, cwd);
-        if (!files.length) throw new ResearchError("File evidence locator must name the file(s) it cites, e.g. src/a.ts:10-20; docs/b.md:4");
-        const unread = files.filter(f => !r.paths!.some(p => coversFile(p, f)));
-        if (unread.length) throw new ResearchError(`Receipt ${r.id} did not read ${unread.join(", ")}; read the cited file(s) and use that receipt`);
-      } else if (r.tool === "task" || (Object.hasOwn(LOCAL_READ_TOOLS, r.tool) ? !r.paths?.length : r.tool !== "bash" && r.tool !== "eval")) {
+        if (!Object.hasOwn(LOCAL_CONTENT_TOOLS, r.tool) || !r.files?.length)
+          throw new ResearchError("File evidence needs a read of the file or a grep/ast_grep receipt that returned matches in it. Directory listings, glob/find file lists (use source \"listing\" for existence), searches without matches, scout reports (agent://…) and task summaries are leads: read the cited file yourself first");
+        const refs = locatorRefs(locator, cwd);
+        if (!refs.length) throw new ResearchError("File evidence locator must name the file(s) it cites, e.g. src/a.ts:10-20; docs/b.md:4");
+        // A range cites those lines; a bare file cites all of it. Either must have been shown by this receipt.
+        for (const ref of refs) {
+          const shown = r.files.find(f => f.path === ref.file);
+          if (!shown) throw new ResearchError(`Receipt ${r.id} returned no content of ${ref.file}; read the cited file(s) and use that receipt`);
+          if (shown.complete) continue;
+          const seen = shown.lines?.length ? `it showed only lines ${shown.lines.map(s => s.join("-")).join(",")}` : "the host did not report which lines it showed";
+          if (!ref.ranges) throw new ResearchError(`Receipt ${r.id} did not show all of ${ref.file} (${seen}); cite the line range you read, e.g. ${ref.file}:N-M`);
+          const unseen = ref.ranges.filter(([s, e]) => !shown.lines?.some(([a, b]) => a <= s && e <= b));
+          if (unseen.length) throw new ResearchError(`Receipt ${r.id} did not show ${ref.file}:${unseen.map(s => s.join("-")).join(",")} (${seen}); read those lines and cite that receipt`);
+        }
+      } else if (source === "listing") {
+        // A listing shows that paths exist, never what they contain; the critic sees source "listing" and judges the claim.
+        const listed = [...r.listed ?? [], ...(r.files ?? []).map(f => f.path)];
+        if (!listed.length) throw new ResearchError("Listing evidence needs a glob/find receipt (or a read/grep/ast_grep receipt) that listed the cited paths");
+        const refs = locatorRefs(locator, cwd);
+        if (!refs.length || refs.some(ref => ref.ranges)) throw new ResearchError("Listing evidence cites paths only, without line ranges, e.g. src/a.ts; docs/");
+        // A listed path also shows that each of its parent directories exists.
+        const missing = refs.filter(ref => !listed.some(p => p === ref.file || p.startsWith(`${ref.file}/`))).map(ref => ref.file);
+        if (missing.length) throw new ResearchError(`Receipt ${r.id} did not list ${missing.join(", ")}`);
+      } else if (r.tool === "task" || (Object.hasOwn(LOCAL_CONTENT_TOOLS, r.tool) ? !r.files?.length : r.tool !== "bash" && r.tool !== "eval")) {
         throw new ResearchError("Experiment evidence needs the run's own output (bash/eval) or a local result file read; scout reports and task summaries are leads");
       }
       const claim = text(e.claim, "claim"); const stance = choice(e.stance, ["supports", "contradicts", "context"], "stance");
@@ -385,21 +413,31 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const reviewer = text(p.evaluator, "evaluator", 200);
       if (reviewer === m.primaryModel || reviewer === evaluator) throw new ResearchError("A critic must declare an evaluator distinct from the research model");
       if (m.criticModel && reviewer !== m.criticModel) throw new ResearchError(`Expected configured critic: ${m.criticModel}`);
-      // Attestation: the host-observed task input pinned this model. Required when the operator configured a critic.
-      let spawnReceiptId: string | undefined;
-      if (p.spawnReceiptId !== undefined || m.criticModel) {
-        const spawn = receipt(m, p.spawnReceiptId, "spawnReceiptId");
-        if (spawn.tool !== "task" || spawn.isError) throw new ResearchError("spawnReceiptId must reference the successful task call that ran the critic");
-        if (!spawn.models?.includes(reviewer)) throw new ResearchError(`The referenced task call did not pin ${reviewer}; set model on the scout task item`);
-        // The response must be the task result itself (blocking spawn) or a read of one of the agents that call spawned.
-        const linked = r.id === spawn.id || (r.tool === "read" && r.sourceRefs.some(ref => spawn.agentIds?.some(id => ref === `agent://${id}` || ref.startsWith(`agent://${id}/`))));
-        if (!linked) throw new ResearchError("The critic response receipt must be the spawning task result or a read of agent://<id> for an agent that task spawned");
-        spawnReceiptId = spawn.id;
-      }
-      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id, ...(spawnReceiptId ? { spawnReceiptId } : {}),
-        evidenceIds: references(m, p.evidenceIds, "critic.evidenceIds"), assessment: choice(p.assessment, ["pass", "revise"], "assessment"),
-        summary: text(p.summary, "critic.summary"), concerns: strings(p.concerns, "critic.concerns"), evidenceDigest: evidenceDigest(m) };
-      if (critic.evidenceIds.length !== m.evidence.length) throw new ResearchError("The critic must review the complete current evidence set");
+      // A blocking task result speaks for its agents; only a single structured critic answer is unambiguous.
+      const answered = r.agents?.filter(a => a.review) ?? [];
+      const review = r.tool === "read" ? r.review : answered.length === 1 ? answered[0]!.review : undefined;
+      if (!review) throw new ResearchError("The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:\"critic\" brief and its outputSchema");
+      // The critic's own answer names the snapshot it reviewed; a past answer cannot be re-dated to the current snapshot.
+      if (review.evidenceDigest !== evidenceDigest(m)) throw new ResearchError("This critic answer reviewed a different evidence/run snapshot; spawn a new critic with the current view:\"critic\" brief");
+      const ids = m.evidence.map(e => e.id);
+      if (review.evidenceIds.length !== ids.length || !ids.every(id => review.evidenceIds.includes(id))) throw new ResearchError("The critic must review the complete current evidence set");
+      // Every critic is attested, configured or not: a self-declared evaluator would otherwise appear in verdicts and reports.
+      if (p.spawnReceiptId === undefined) throw new ResearchError("spawnReceiptId is required: run the critic as a scout task item pinned to one model, then cite that task call");
+      const spawn = receipt(m, p.spawnReceiptId, "spawnReceiptId");
+      if (spawn.tool !== "task" || spawn.isError) throw new ResearchError("spawnReceiptId must reference the successful task call that ran the critic");
+      // Attestation ties the model to the agent that produced this response, not to any agent of the same batch.
+      const agent = r.id === spawn.id ? (answered.length === 1 ? answered[0] : undefined)
+        : r.tool === "read" ? spawn.agents?.find(a => r.opened?.some(ref => ref === `agent://${a.id}` || ref.startsWith(`agent://${a.id}/`) || ref.startsWith(`agent://${a.id}:`))) : undefined;
+      if (!agent) throw new ResearchError("The critic response must be a read of agent://<id> for an agent that task spawned, or a blocking task result with exactly one structured critic answer");
+      const ran = agent.fallback ? "a host fallback model" : agent.resolvedModel ?? agent.requestedModel ?? "an unpinned model";
+      if (ran !== reviewer) throw new ResearchError(`Agent ${agent.id} ran ${ran}, not ${reviewer}; pin exactly that model on the critic's task item`);
+      // The echoed digest alone could sit beside an edited or stale snapshot body; the handed material itself must match.
+      if (!agent.briefs?.includes(snapshotHash(criticSnapshot(m))))
+        throw new ResearchError(`Agent ${agent.id}'s task did not carry the current view:"critic" snapshot unchanged; pass the snapshot JSON verbatim (only notes may differ) and spawn a new critic`);
+      // Instructions added around the brief are not detected; removed or rewritten brief instructions are.
+      if (!agent.instructed)
+        throw new ResearchError(`Agent ${agent.id}'s task did not carry the complete view:"critic" instructions verbatim; pass them unchanged and spawn a new critic`);
+      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id, spawnReceiptId: spawn.id, agentId: agent.id, ...review };
       return emit("critic_recorded", { critic });
     }
     case "verdict": {

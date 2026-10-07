@@ -324,6 +324,24 @@ test("each scout task item counts against the pass's subagent budget", async () 
     assert.match(brief.content[0]!.text, /"childrenLeft": 0/);
   } finally { h.cleanup(); }
 });
+test("a task call the host rejects, or that spawns fewer agents than items, gives its subagent budget back", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web --max-children 2 Compare A and B");
+    const input = { context: "", tasks: [{ agent: "scout", task: "q0" }, { agent: "scout", task: "q1" }] };
+    h.emit("tool_call", { toolName: "task", toolCallId: "t1", input });
+    h.emit("tool_result", { toolName: "task", toolCallId: "t1", input, isError: true, details: { results: [] }, content: [{ type: "text", text: "Missing `context`." }] });
+    assert.equal(h.state().mission!.pass.children, 0);
+    const retry = { ...input, context: "c" };
+    assert.equal(h.emit("tool_call", { toolName: "task", toolCallId: "t2", input: retry }), undefined);
+    h.emit("tool_result", { toolName: "task", toolCallId: "t2", input: retry, isError: false, details: { progress: [{ index: 0, id: "A" }] }, content: [{ type: "text", text: "Spawned" }] });
+    assert.equal(h.state().mission!.pass.children, 1);
+    // Without host-reported agents, a successful call keeps its charge.
+    const single = { agent: "scout", task: "q" };
+    h.emit("tool_call", { toolName: "task", toolCallId: "t3", input: single });
+    h.emit("tool_result", { toolName: "task", toolCallId: "t3", input: single, isError: false, content: [{ type: "text", text: "done" }] });
+    assert.equal(h.state().mission!.pass.children, 2);
+  } finally { h.cleanup(); }
+});
 test("scouts spawned by an active mission obey its mode, report usage, and stop when it pauses", async () => {
   const h = mockHost(); try {
     await h.command("--mode data --max-tokens 50000 Inspect local results");

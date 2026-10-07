@@ -69,16 +69,52 @@ export interface Receipt {
   metrics: Record<string, number>;
   metricError?: string;
   asi: Record<string, AsiValue>;
-  sourceRefs: string[];
-  /** For local read tools: absolute paths the call covered (selectors kept); the basis for file-evidence checks. */
-  paths?: string[];
-  /** For `task` receipts: host-resolved `provider/id` models the call pinned or the host reported as used. */
-  models?: string[];
-  /** For `task` receipts: agent ids the spawn reported, so a later `read agent://<id>` can be linked back. */
-  agentIds?: string[];
+  /** `read` only: what the call actually opened — the requested path/URL and the host-reported URL and final URL after redirects. */
+  opened?: string[];
+  /** URLs that merely appear in the output (page links, scout suggestions): leads, never proof of reading them. */
+  links: string[];
+  /** Local files whose content the result returned (a read file, or files with returned grep/ast_grep matches), with the lines shown. */
+  files?: ReceiptFile[];
+  /** `glob`/`find`: local paths the result listed. Existence only, never content. */
+  listed?: string[];
+  /** `task` only: one record per spawned agent, so a model is tied to the agent that ran it. */
+  agents?: TaskAgent[];
+  /** Structured critic response found in this result (e.g. a `read` of the critic's `agent://<id>`). */
+  review?: CriticReview;
+}
+export interface ReceiptFile {
+  /** Absolute path. */
+  path: string;
+  /** Merged 1-based line spans whose text the result showed; absent when the host did not report them. */
+  lines?: [number, number][];
+  /** The result showed the whole file. */
+  complete?: true;
+}
+export interface TaskAgent {
+  id: string;
+  /** Host-resolved `provider/id` of the task item's single-model pin. */
+  requestedModel?: string;
+  /** Host-reported `provider/id` the agent ran (blocking results). */
+  resolvedModel?: string;
+  /** The host reported a fallback model: nothing proves which requested model ran. */
+  fallback?: true;
+  /** Hashes (`snapshotHash`) of the critic snapshots its own assignment carried. */
+  briefs?: string[];
+  /** Its assignment carried the complete `view:"critic"` instructions verbatim (whitespace-insensitive). */
+  instructed?: true;
+  /** Structured critic response of a blocking result. */
+  review?: CriticReview;
+}
+/** The critic's own structured answer, including the digest of the snapshot it reviewed. */
+export interface CriticReview {
+  assessment: "pass" | "revise";
+  summary: string;
+  concerns: string[];
+  evidenceIds: string[];
+  evidenceDigest: string;
 }
 export interface EvidenceInput {
-  source: "web" | "file" | "experiment";
+  source: "web" | "file" | "listing" | "experiment";
   title: string;
   claim: string;
   summary: string;
@@ -124,18 +160,17 @@ export interface Segment {
 }
 export interface CriticInput {
   evaluator: string;
+  /** Receipt holding the critic's structured response. */
   receiptId: string;
-  /** `task` receipt that spawned the critic with a pinned model; required when a critic model is configured. */
-  spawnReceiptId?: string;
-  evidenceIds: string[];
-  assessment: "pass" | "revise";
-  summary: string;
-  concerns: string[];
+  /** `task` receipt that spawned the critic with a pinned model. */
+  spawnReceiptId: string;
 }
-export interface Critic extends CriticInput {
+/** Assessment, concerns, evidence IDs and digest come from the critic's response, never from the recording model. */
+export interface Critic extends CriticInput, CriticReview {
   id: string;
   at: string;
-  evidenceDigest: string;
+  /** Spawned agent whose response this is. */
+  agentId: string;
 }
 export interface Finding {
   claim: string;
@@ -173,7 +208,7 @@ export type EventType =
   | "ledger_reset"
   | "intake_started" | "intake_cancelled"
   | "mission_created" | "mode_set" | "execution_set" | "pass_resumed" | "pass_paused" | "mission_cancelled" | "mission_cleared"
-  | "tool_counted" | "receipt_recorded" | "continuation_requested"
+  | "tool_counted" | "children_released" | "receipt_recorded" | "continuation_requested"
   | "evidence_added" | "segment_started" | "run_logged" | "run_flagged" | "notes_updated"
   | "usage_recorded" | "critic_recorded" | "verdict_issued";
 export interface LedgerEvent {

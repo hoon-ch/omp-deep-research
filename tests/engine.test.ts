@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, resetEvent, restore, startEvent } from "../src/engine.ts";
+import { CRITIC_INSTRUCTIONS } from "../src/briefs.ts";
+import { buildReceipt, snapshotHash } from "../src/receipts.ts";
 import { bestRun, effectToNoise } from "../src/runs.ts";
+import type { ToolResult } from "../src/host.ts";
 import { Ledger, NOW, VERDICT } from "./helpers.ts";
 
 test("creates an explicit bounded mission", () => {
@@ -108,17 +111,44 @@ test("failed experiments can be recorded as failure evidence", () => {
 test("file evidence must come from reading the cited files, never from a scout report", () => {
   const l = new Ledger(); l.start({ mode: "data" });
   const file = (receipt: { id: string }, locator: string) => l.op({ op: "evidence", evidence: { source: "file", title: "t", claim: `c ${locator}`, summary: "s", locator, receiptId: receipt.id, stance: "supports" } });
-  const scout = l.receipt({ tool: "read", paths: [], sourceRefs: ["agent://FirmwareWakePipeline"] });
-  assert.throws(() => file(scout, "firmware/audio_i2s.c:1429-1444"), /Scout reports/);
-  assert.throws(() => file(l.receipt({ tool: "task" }), "firmware/audio_i2s.c"), /Scout reports/);
-  const log = l.receipt({ tool: "read", paths: ["/repo/docs/validation-log.md:125-190"] });
-  assert.throws(() => file(log, "bridge/session_fsm.py:780-829"), /did not read \/repo\/bridge\/session_fsm\.py/);
+  const scout = l.receipt({ tool: "read", files: [], opened: ["agent://FirmwareWakePipeline"] });
+  assert.throws(() => file(scout, "firmware/audio_i2s.c:1429-1444"), /scout reports/);
+  assert.throws(() => file(l.receipt({ tool: "task" }), "firmware/audio_i2s.c"), /scout reports/);
+  const log = l.receipt({ tool: "read", files: [{ path: "/repo/docs/validation-log.md", lines: [[125, 190]] }] });
+  assert.throws(() => file(log, "bridge/session_fsm.py:780-829"), /returned no content of \/repo\/bridge\/session_fsm\.py/);
   file(log, "docs/validation-log.md:130-133");
-  const grep = l.receipt({ tool: "grep", paths: ["/repo/firmware/main"] });
+  const grep = l.receipt({ tool: "grep", files: [{ path: "/repo/firmware/main/wake.cc", lines: [[7, 12], [88, 88]] }, { path: "/repo/firmware/main/nvs_cfg.c", lines: [[4, 4]] }] });
   file(grep, "firmware/main/wake.cc:8-11,88; firmware/main/nvs_cfg.c:4");
   assert.throws(() => file(grep, "firmware/main/wake.cc:8; bridge/x.py:2"), /bridge\/x\.py/);
   assert.equal(l.state().mission!.evidence.length, 2);
   assert.throws(() => l.op({ op: "evidence", evidence: { source: "experiment", title: "t", claim: "c", summary: "s", locator: "run", receiptId: scout.id, stance: "context" } }), /Experiment evidence/);
+});
+test("file evidence cites only lines the receipt showed; a bare file needs the whole file", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const file = (receipt: { id: string }, locator: string) => l.op({ op: "evidence", evidence: { source: "file", title: "t", claim: `c ${locator}`, summary: "s", locator, receiptId: receipt.id, stance: "supports" } });
+  const partial = l.receipt({ tool: "read", files: [{ path: "/repo/a.ts", lines: [[1, 50], [80, 90]] }] });
+  assert.throws(() => file(partial, "a.ts"), /did not show all of \/repo\/a\.ts \(it showed only lines 1-50,80-90\)/);
+  assert.throws(() => file(partial, "a.ts:45-60"), /did not show \/repo\/a\.ts:45-60/);
+  assert.throws(() => file(partial, "a.ts:10,55"), /did not show \/repo\/a\.ts:55-55/);
+  file(partial, "a.ts:10-20,85"); file(partial, "a.ts#L40-L50");
+  assert.throws(() => file(l.receipt({ tool: "read", files: [{ path: "/repo/b.ts" }] }), "b.ts:3"), /host did not report which lines/);
+  const whole = l.receipt({ tool: "read", files: [{ path: "/repo/c.ts", lines: [[1, 9]], complete: true }] });
+  file(whole, "c.ts"); file(whole, "c.ts:2-4");
+  assert.throws(() => file(whole, "c.ts:9-5"), /Invalid line range/);
+});
+test("listing evidence records existence from a glob/find listing, never with line ranges", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const listing = (receipt: { id: string }, locator: string) => l.op({ op: "evidence", evidence: { source: "listing", title: "t", claim: `exists ${locator}`, summary: "s", locator, receiptId: receipt.id, stance: "context" } });
+  const glob = l.receipt({ tool: "glob", listed: ["/repo/tests/a.test.ts", "/repo/tests/fixtures"] });
+  listing(glob, "tests/a.test.ts; tests/fixtures/");
+  listing(glob, "tests/, tests/fixtures");
+  assert.throws(() => listing(glob, "tests/b.test.ts"), /did not list \/repo\/tests\/b\.test\.ts/);
+  assert.throws(() => listing(glob, "test"), /did not list \/repo\/test$/);
+  assert.throws(() => listing(glob, "tests/a.test.ts:3"), /paths only/);
+  assert.throws(() => listing(l.receipt({ tool: "web_search" }), "tests/a.test.ts"), /glob\/find receipt/);
+  listing(l.receipt({ tool: "grep", files: [{ path: "/repo/src/x.ts", lines: [[3, 3]] }] }), "src/x.ts");
+  const web = new Ledger(); web.start();
+  assert.throws(() => web.op({ op: "evidence", evidence: { source: "listing", title: "t", claim: "c", summary: "s", locator: "a.ts", receiptId: web.receipt({ tool: "glob", listed: ["/repo/a.ts"] }).id, stance: "context" } }), /not allowed in web mode/);
 });
 test("rejects javascript URLs and embedded credentials", () => {
   for (const locator of ["javascript:alert(1)", "https://user:password@example.org/"]) {
@@ -215,34 +245,122 @@ test("effect-to-noise needs three valid runs with spread and ignores flagged run
   assert.equal(effectToNoise(l.state().mission!), 2);
   l.op({ op: "flag_run", runId: "R3", reason: "Cache was warm" }); assert.equal(effectToNoise(l.state().mission!), null);
 });
-test("configured critic must be host-attested and review the current complete evidence snapshot", () => {
+test("configured critic must be host-attested and answer for the current complete evidence snapshot", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
   assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /critic receipt/);
-  const unpinned = l.receipt({ tool: "task", models: ["test/other"], agentIds: ["Crit"] });
-  const base = { evaluator: "test/critic", evidenceIds: ["E1"], assessment: "pass", summary: "Source supports claim", concerns: [] };
-  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: unpinned.id } }), /spawnReceiptId/);
-  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: unpinned.id, spawnReceiptId: unpinned.id } }), /did not pin test\/critic/);
-  const spawn = l.receipt({ tool: "task", models: ["test/critic"], agentIds: ["Crit"] });
-  const stranger = l.receipt({ tool: "read", sourceRefs: ["agent://Other"] });
-  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: stranger.id, spawnReceiptId: spawn.id } }), /spawning task result or a read/);
-  const response = l.receipt({ tool: "read", sourceRefs: ["agent://Crit"] });
-  const critic = { ...base, receiptId: response.id, spawnReceiptId: spawn.id };
+  const unpinned = l.receipt({ tool: "task", agents: [{ id: "Crit" }] });
+  const response = l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review() });
+  const base = { evaluator: "test/critic", receiptId: response.id };
+  assert.throws(() => l.op({ op: "critic", critic: base }), /spawnReceiptId/);
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, spawnReceiptId: unpinned.id } }), /Crit ran an unpinned model, not test\/critic/);
+  const fallback = l.receipt({ tool: "task", agents: [{ id: "Crit", requestedModel: "test/critic", fallback: true }] });
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, spawnReceiptId: fallback.id } }), /fallback/);
+  const handed = () => l.criticSpawn();
+  const spawn = handed();
+  const stranger = l.receipt({ tool: "read", opened: ["agent://Other"], review: l.review() });
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: stranger.id, spawnReceiptId: spawn.id } }), /read of agent:\/\/<id>/);
+  const unstructured = l.receipt({ tool: "read", opened: ["agent://Crit"] });
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: unstructured.id, spawnReceiptId: spawn.id } }), /no structured critic answer/);
+  const partial = l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review({ evidenceIds: [] }) });
+  assert.throws(() => l.op({ op: "critic", critic: { ...base, receiptId: partial.id, spawnReceiptId: spawn.id } }), /complete current evidence/);
+  const critic = { ...base, spawnReceiptId: spawn.id };
   l.op({ op: "critic", critic });
+  assert.equal(l.state().mission!.critics[0]!.agentId, "Crit");
   l.evidence({ claim: "New evidence" });
   assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /CURRENT/);
-  assert.throws(() => l.op({ op: "critic", critic }), /complete current evidence/);
-  l.op({ op: "critic", critic: { ...critic, evidenceIds: ["E1", "E2"] } });
+  const fresh = l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review() });
+  assert.throws(() => l.op({ op: "critic", critic: { ...critic, receiptId: fresh.id } }), /did not carry the current view:"critic" snapshot/);
+  l.op({ op: "critic", critic: { ...critic, receiptId: fresh.id, spawnReceiptId: handed().id } });
   l.op({ op: "verdict", verdict: VERDICT }); assert.equal(l.state().mission!.phase, "completed");
 });
+test("a past critic answer cannot be re-recorded as a review of a newer snapshot", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
+  const spawn = l.criticSpawn();
+  const old = l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review() });
+  l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: old.id, spawnReceiptId: spawn.id } });
+  l.evidence({ claim: "Later evidence" });
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: old.id, spawnReceiptId: spawn.id } }), /different evidence\/run snapshot/);
+  assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /CURRENT/);
+});
+// Review regressions: host-shaped tool results go through buildReceipt, so these pin the receipt → evidence/critic contract.
+const hostReceipt = (l: Ledger, event: Omit<ToolResult, "isError" | "toolCallId">, resolve = (s: string) => /^test\/\w+$/.test(s) ? { provider: "test", id: s.slice(5) } : undefined) =>
+  l.receipt(buildReceipt({ ...event, toolCallId: `host-${++l.serial}`, isError: false }, resolve, "/repo", NOW));
+test("R1: a link inside a page is not a read of the linked page; a host-observed redirect is", () => {
+  const l = new Ledger(); l.start();
+  const page = hostReceipt(l, { toolName: "read", input: { path: "https://a.example/doc" }, details: { kind: "url", url: "https://a.example/doc", finalUrl: "https://a.example/doc/v2" },
+    content: [{ type: "text", text: "URL: https://a.example/doc/v2\n\nSee https://b.example/paper for details" }] });
+  assert.throws(() => l.evidence({ locator: "https://b.example/paper", receiptId: page.id }), /did not open that URL/);
+  l.evidence({ locator: "https://a.example/doc/v2", receiptId: page.id }); l.evidence({ locator: "https://a.example/doc", receiptId: page.id, claim: "Other" });
+  assert.equal(l.state().mission!.evidence.length, 2);
+});
+test("R2: a search scope without returned matches backs no file evidence", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const file = (receiptId: string, locator: string) => l.op({ op: "evidence", evidence: { source: "file", title: "t", claim: `c ${locator}`, summary: "s", locator, receiptId, stance: "supports" } });
+  const miss = hostReceipt(l, { toolName: "grep", input: { path: "src", pattern: "NO_SUCH_MATCH" }, details: { cwd: "/repo", files: [], matchCount: 0 }, content: [{ type: "text", text: "No matches found" }] });
+  assert.throws(() => file(miss.id, "src/unread.ts:10-20"), /returned matches/);
+  const hit = hostReceipt(l, { toolName: "grep", input: { path: "src", pattern: "x" }, details: { cwd: "/repo", files: ["src/a.ts"], matchCount: 1, displayContent: "# src/\n## a.ts#1A2B\n 2│ctx\n*3│x" }, content: [{ type: "text", text: "# src/a.ts\n3:x" }] });
+  assert.throws(() => file(hit.id, "src/unread.ts:10-20"), /returned no content of \/repo\/src\/unread\.ts/);
+  file(hit.id, "src/a.ts:2-3");
+  assert.throws(() => file(hit.id, "src/a.ts:3-9"), /did not show \/repo\/src\/a\.ts:3-9 \(it showed only lines 2-3\)/);
+  assert.throws(() => file(hit.id, "src/a.ts"), /did not show all of/);
+  const dir = hostReceipt(l, { toolName: "read", input: { path: "src" }, details: { resolvedPath: "/repo/src", isDirectory: true }, content: [{ type: "text", text: "a.ts\nunread.ts" }] });
+  assert.throws(() => file(dir.id, "src/unread.ts"), /returned matches/);
+  const listed = hostReceipt(l, { toolName: "glob", input: { path: "src/*.ts" }, details: { files: ["src/unread.ts"] }, content: [{ type: "text", text: "src/unread.ts" }] });
+  assert.throws(() => file(listed.id, "src/unread.ts"), /glob\/find file lists/);
+});
+test("R3: another batch agent's answer cannot pass as the pinned critic's", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
+  const spawn = hostReceipt(l, { toolName: "task", input: { context: l.brief(), tasks: [{ name: "Critic", agent: "scout", model: "test/critic" }, { name: "Helper", agent: "scout", model: "test/helper" }] },
+    details: { results: [], progress: [{ index: 0, id: "Critic" }, { index: 1, id: "Helper" }] }, content: [{ type: "text", text: "Spawned 2 agents" }] });
+  const answer = (id: string) => hostReceipt(l, { toolName: "read", input: { path: `agent://${id}` }, details: { resolvedPath: `/tmp/${id}.md` }, content: [{ type: "text", text: JSON.stringify(l.review()) }] });
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: answer("Helper").id, spawnReceiptId: spawn.id } }), /Helper ran test\/helper, not test\/critic/);
+  l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: answer("Critic").id, spawnReceiptId: spawn.id } });
+  l.op({ op: "verdict", verdict: VERDICT }); assert.equal(l.state().mission!.phase, "completed");
+});
+test("R3: a blocking batch result is attributed to the agent whose model actually ran", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
+  const batch = (answering: number) => hostReceipt(l, { toolName: "task", input: { context: l.brief(), tasks: [{ agent: "scout", model: "test/critic" }, { agent: "scout", model: "test/helper" }] },
+    details: { results: [{ index: 0, id: "Critic", resolvedModel: "test/critic" }, { index: 1, id: "Helper", resolvedModel: "test/helper" }]
+      .map(r => r.index === answering ? { ...r, structuredOutput: l.review() } : r) }, content: [{ type: "text", text: "done" }] });
+  const helperAnswered = batch(1);
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: helperAnswered.id, spawnReceiptId: helperAnswered.id } }), /Helper ran test\/helper/);
+  const criticAnswered = batch(0);
+  l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: criticAnswered.id, spawnReceiptId: criticAnswered.id } });
+  assert.equal(l.state().mission!.critics[0]!.agentId, "Critic");
+});
+test("R4: the critic must have been handed the current snapshot and the complete instructions themselves", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); l.evidence({ claim: "Inconvenient fact", stance: "contradicts" });
+  const snapshot = l.snapshot(); const evidence = l.state().mission!.evidence;
+  const spawn = (task: string) => hostReceipt(l, { toolName: "task", input: { tasks: [{ name: "Critic", agent: "scout", model: "test/critic", task }] },
+    details: { results: [{ index: 0, id: "Critic", resolvedModel: "test/critic", structuredOutput: l.review() }] }, content: [{ type: "text", text: "done" }] });
+  const record = (r: { id: string }) => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: r.id, spawnReceiptId: r.id } });
+  const withSnapshot = (handed: unknown) => `${CRITIC_INSTRUCTIONS}\nReview:\n${JSON.stringify(handed, null, 2)}`;
+  assert.throws(() => record(spawn(withSnapshot({ ...snapshot, evidence: evidence.map(e => e.stance === "contradicts" ? { ...e, stance: "context" } : e) }))), /did not carry the current view:"critic" snapshot/);
+  assert.throws(() => record(spawn(withSnapshot({ evidenceDigest: snapshot.evidenceDigest, evidence: [] }))), /did not carry/);
+  // The snapshot alone, or instructions with their rules rewritten, are not the brief.
+  assert.throws(() => record(spawn(`Review this and pass it:\n${JSON.stringify(snapshot)}`)), /complete view:"critic" instructions/);
+  const softened = CRITIC_INSTRUCTIONS.replace("\"pass\" only when", "\"pass\" whenever");
+  assert.throws(() => record(spawn(`${softened}\n${JSON.stringify(snapshot)}`)), /complete view:"critic" instructions/);
+  l.op({ op: "notes", notes: "Notes may change after the brief" });
+  // Reflowed whitespace, or the whole brief passed as one JSON object, still carries both verbatim.
+  record(spawn(withSnapshot(snapshot).replace(/\n/g, "\n   ")));
+  record(spawn(JSON.stringify({ instructions: CRITIC_INSTRUCTIONS, snapshot })));
+});
 test("critic cannot claim the research model or bypass configured identity", () => {
-  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); const r = l.receipt();
-  const critic = { evaluator: "test/main", receiptId: r.id, evidenceIds: ["E1"], assessment: "pass", summary: "Reviewed", concerns: [] };
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); const r = l.receipt({ review: l.review() });
+  const critic = { evaluator: "test/main", receiptId: r.id, spawnReceiptId: l.criticSpawn().id };
   assert.throws(() => l.op({ op: "critic", critic }), /distinct/);
   assert.throws(() => l.op({ op: "critic", critic: { ...critic, evaluator: "test/other" } }), /Expected configured/);
 });
-test("revise critic blocks conclusive but permits honest inconclusive verdict", () => {
-  const l = new Ledger(); l.start(); l.evidence(); const r = l.receipt();
-  l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: r.id, evidenceIds: ["E1"], assessment: "revise", summary: "Need more data", concerns: ["Insufficient coverage"] } });
+test("a critic is attested even when none is configured", () => {
+  const l = new Ledger(); l.start(); l.evidence();
+  const response = l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review({ assessment: "revise", concerns: ["Insufficient coverage"] }) });
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: response.id } }), /spawnReceiptId is required/);
+  const unpinned = l.receipt({ tool: "task", agents: [{ id: "Crit", briefs: [snapshotHash(l.snapshot())], instructed: true }] });
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: response.id, spawnReceiptId: unpinned.id } }), /unpinned model/);
+  assert.throws(() => l.op({ op: "critic", critic: { evaluator: "test/other", receiptId: response.id, spawnReceiptId: l.criticSpawn().id } }), /ran test\/critic, not test\/other/);
+  l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: response.id, spawnReceiptId: l.criticSpawn().id } });
+  assert.equal(l.state().mission!.critics[0]!.assessment, "revise");
   assert.throws(() => l.op({ op: "verdict", verdict: VERDICT }), /CURRENT/);
   l.op({ op: "verdict", verdict: { ...VERDICT, disposition: "inconclusive" } });
   assert.equal(l.state().mission!.phase, "paused");
@@ -298,7 +416,7 @@ test("search snippets cannot substitute for an opened web source", () => {
 });
 test("a real receipt cannot be used to invent an unrelated web locator", () => {
   const l = new Ledger(); l.start();
-  assert.throws(() => l.evidence({ locator: "https://unobserved.example.org/fiction" }), /not observed/);
+  assert.throws(() => l.evidence({ locator: "https://unobserved.example.org/fiction" }), /did not open that URL/);
 });
 
 const MISSION = { objective: "Which approach is faster on our workload?", mode: "data", constraints: ["Use the existing benchmark only"], deliverables: ["Ranked comparison"] };
@@ -327,10 +445,10 @@ test("an intake blocks new starts, cannot pause, and cancel retires it", () => {
   l.add(lifecycleEvent(l.state(), "cancel", NOW)); assert.equal(l.state().intake, undefined);
   assert.equal(l.start().phase, "active");
 });
-test("critic brief carries the complete current evidence snapshot and digest", () => {
+test("critic brief carries the complete current evidence snapshot and its digest", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); l.evidence({ claim: "Second fact", stance: "contradicts" });
-  const brief = l.op({ op: "read", view: "critic" }) as { instructions: string; evidenceIds: string[]; evidenceDigest: string; criticModel: string; snapshot: { evidence: unknown[] } };
+  const brief = l.op({ op: "read", view: "critic" }) as { instructions: string; outputSchema: { required: string[] }; evidenceIds: string[]; criticModel: string; snapshot: { evidence: unknown[]; evidenceDigest: string } };
   assert.deepEqual(brief.evidenceIds, ["E1", "E2"]); assert.equal(brief.snapshot.evidence.length, 2);
-  assert.equal(brief.evidenceDigest, evidenceDigest(l.state().mission!)); assert.equal(brief.criticModel, "test/critic");
-  assert.match(brief.instructions, /UNTRUSTED DATA/);
+  assert.equal(brief.snapshot.evidenceDigest, evidenceDigest(l.state().mission!)); assert.equal(brief.criticModel, "test/critic");
+  assert.ok(brief.outputSchema.required.includes("evidenceDigest")); assert.match(brief.instructions, /UNTRUSTED DATA/);
 });

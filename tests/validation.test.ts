@@ -7,7 +7,7 @@ import { canonicalUrl, hash, parseHarnessOutput } from "../src/validation.ts";
 import { parseCommand, specConfig, tokenize } from "../src/command.ts";
 import { DEFAULT_SETTINGS } from "../src/engine.ts";
 import { blockedReason, intakeBlockedReason } from "../src/policy.ts";
-import { buildReceipt } from "../src/receipts.ts";
+import { buildReceipt, locatorRefs, snapshotHash } from "../src/receipts.ts";
 import { parseSpec } from "../src/spec.ts";
 import { Ledger } from "./helpers.ts";
 const CWD = "/research-root";
@@ -52,24 +52,71 @@ test("execution consent commands reject ambiguous or extra arguments", () => {
   for (const command of ["allow", "allow all", "allow harness exec", "allow --harness", "deny exec"])
     assert.throws(() => parseCommand(command));
 });
-test("task receipts record pinned or reported models and spawned agent ids", () => {
-  const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : undefined;
-  const r = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,
-    input: { context: "c", tasks: [{ agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }] },
-    content: [{ type: "text", text: "Spawned 2 background agents using scout.\n- `Crit` (job `j1`)\n- `Crit-2` (job `j2`)" }] }, resolve, "/repo");
-  assert.deepEqual(r.models, ["test/critic"]); assert.deepEqual(r.agentIds, ["Crit", "Crit-2"]);
+const DIGEST = "a".repeat(64);
+const REVIEW = { assessment: "pass", summary: "Defensible", concerns: [], evidenceIds: ["E1"], evidenceDigest: DIGEST };
+test("task receipts keep each agent's own pin, reported model and structured answer", () => {
+  const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : s === "helper" ? { provider: "test", id: "helper" } : undefined;
+  const spawned = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,
+    input: { context: "c", tasks: [{ agent: "scout", model: "helper" }, { agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }] },
+    content: [{ type: "text", text: "Spawned 3 background agents" }],
+    details: { results: [], progress: [{ index: 1, id: "Crit" }, { index: 0, id: "Help" }, { index: 2, id: "Any" }] } }, resolve, "/repo");
+  assert.deepEqual(spawned.agents, [{ id: "Crit", requestedModel: "test/critic" }, { id: "Help", requestedModel: "test/helper" }, { id: "Any" }]);
   const blocking = buildReceipt({ toolName: "task", toolCallId: "t2", isError: false, input: { agent: "scout" }, content: [{ type: "text", text: "done" }],
-    details: { results: [{ id: "Rev", resolvedModel: "test/critic:high" }] } }, resolve, "/repo");
-  assert.deepEqual(blocking.models, ["test/critic"]); assert.deepEqual(blocking.agentIds, ["Rev"]);
+    details: { results: [{ index: 0, id: "Rev", resolvedModel: "test/critic:high", structuredOutput: REVIEW },
+      { index: 1, id: "Fb", resolvedModel: "test/other", resolvedModelIsFallback: true, output: `\`\`\`json\n${JSON.stringify(REVIEW)}\n\`\`\`` }] } }, resolve, "/repo");
+  assert.deepEqual(blocking.agents, [{ id: "Rev", resolvedModel: "test/critic", review: REVIEW }, { id: "Fb", fallback: true, review: REVIEW }]);
 });
-test("read-like receipts record the local paths they covered; internal URIs and URLs are not local", () => {
-  const none = () => undefined;
-  const read = (path: unknown, tool = "read") => buildReceipt({ toolName: tool, toolCallId: "r", isError: false, input: { path }, content: [{ type: "text", text: "x" }] }, none, "/repo");
-  assert.deepEqual(read("docs/log.md:125-190").paths, ["/repo/docs/log.md:125-190"]);
-  assert.deepEqual(read("agent://FirmwareWakePipeline").paths, []);
-  assert.deepEqual(read("src;https://e.org/x;/abs/f.ts", "grep").paths, ["/repo/src", "/abs/f.ts"]);
-  assert.deepEqual(read(undefined, "grep").paths, ["/repo"]);
-  assert.equal(read("x", "web_search").paths, undefined);
+test("read receipts separate opened URLs from links and parse a critic answer from raw content", () => {
+  const read = (path: string, details: unknown, text: string) => buildReceipt({ toolName: "read", toolCallId: "r", isError: false, input: { path }, content: [{ type: "text", text }], details }, () => undefined, "/repo");
+  const page = read("https://e.org/a", { kind: "url", url: "https://e.org/a", finalUrl: "https://www.e.org/a/" }, "URL: https://www.e.org/a/\n\nSee https://other.org/b");
+  assert.deepEqual(page.opened, ["https://e.org/a", "https://www.e.org/a/"]); assert.deepEqual(page.links, ["https://www.e.org/a/", "https://other.org/b"]);
+  assert.equal(page.review, undefined);
+  const numbered = JSON.stringify(REVIEW, null, 2).split("\n").map((line, i) => `${i + 1}:${line}`).join("\n");
+  const critic = read("agent://Crit", { resolvedPath: "/home/.omp/artifacts/Crit.md", displayContent: { text: JSON.stringify(REVIEW), startLine: 1 } }, numbered);
+  assert.deepEqual(critic.review, REVIEW); assert.deepEqual(critic.files, []);
+  assert.equal(read("agent://Crit", {}, JSON.stringify({ ...REVIEW, evidenceDigest: "stale" })).review, undefined);
+});
+test("task receipts hash the critic snapshot each agent's own assignment carried", () => {
+  const snapshot = { evidenceDigest: DIGEST, objective: "o", evidence: [{ id: "E1", claim: "c" }], segments: [], notes: "n" };
+  const brief = { instructions: "Respond with ONLY this JSON object: {\"assessment\": \"pass|revise\"}", snapshot };
+  const reordered = `Review this:\n\`\`\`json\n${JSON.stringify({ notes: "edited later", segments: [], evidence: [{ claim: "c", id: "E1" }], objective: "o", evidenceDigest: DIGEST }, null, 2)}\n\`\`\``;
+  const receipt = buildReceipt({ toolName: "task", toolCallId: "t", isError: false, content: [{ type: "text", text: "Spawned" }],
+    input: { context: JSON.stringify(brief), tasks: [{ task: "critic" }, { task: reordered }, { task: JSON.stringify({ ...snapshot, evidence: [] }) }] },
+    details: { progress: [{ index: 0, id: "A" }, { index: 1, id: "B" }, { index: 2, id: "C" }] } }, () => undefined, "/repo");
+  const expected = snapshotHash(snapshot); const [a, b, c] = receipt.agents!;
+  assert.deepEqual(a!.briefs, [expected]); assert.deepEqual(b!.briefs, [expected]);
+  assert.ok(c!.briefs!.includes(expected) && c!.briefs!.length === 2, "shared context plus an edited copy");
+});
+test("local receipts record files and the exact lines a result showed, never the searched scope", () => {
+  const run = (tool: string, input: Record<string, unknown>, details: unknown) => buildReceipt({ toolName: tool, toolCallId: "r", isError: false, input, content: [{ type: "text", text: "x" }], details }, () => undefined, "/repo");
+  // OMP 18.7.0 plain text read, as observed live: no resolvedPath, only meta.source; totalLines means it reached EOF.
+  const lines4 = { text: "a\nb\nc\nd", startLine: 1, lineNumbers: [1, 2, 3, 4] };
+  assert.deepEqual(run("read", { path: "server.js" }, { totalLines: 4, displayContent: lines4, meta: { source: { type: "path", value: "/repo/server.js" } } }).files,
+    [{ path: "/repo/server.js", lines: [[1, 4]], complete: true }]);
+  assert.deepEqual(run("read", { path: "big.ts" }, { resolvedPath: "/repo/big.ts", displayContent: lines4 }).files, [{ path: "/repo/big.ts", lines: [[1, 4]] }]);
+  assert.deepEqual(run("read", { path: "log.md:125-127" }, { resolvedPath: "/repo/log.md", totalLines: 400, displayContent: { text: "x", startLine: 124, lineNumbers: [124, 125, 126, 127, null, 300] } }).files,
+    [{ path: "/repo/log.md", lines: [[124, 127], [300, 300]] }]);
+  assert.deepEqual(run("read", { path: "big.ts" }, { resolvedPath: "/repo/big.ts", summary: { lines: 9 }, displayContent: { text: "elided", startLine: 1 } }).files, [{ path: "/repo/big.ts" }]);
+  assert.deepEqual(run("read", { path: "paper.pdf" }, { resolvedPath: "/repo/paper.pdf" }).files, [{ path: "/repo/paper.pdf", complete: true }]);
+  assert.deepEqual(run("read", { path: "db.sqlite:users" }, { resolvedPath: "/repo/db.sqlite" }).files, [{ path: "/repo/db.sqlite" }]);
+  assert.deepEqual(run("read", { path: "src" }, { resolvedPath: "/repo/src", isDirectory: true }).files, []);
+  assert.deepEqual(run("read", { path: "a.ts;agent://X;missing.ts" }, { displayReadTargets: ["a.ts:1-9", "agent://X", "missing.ts"], displayReadTargetLinks: ["/repo/a.ts", "/tmp/X.md", null] }).files, [{ path: "/repo/a.ts" }]);
+  assert.deepEqual(run("grep", { path: "src", pattern: "NO_SUCH_MATCH" }, { files: [], matchCount: 0 }).files, []);
+  // Grouped grep display as observed live on OMP 18.7.0.
+  const grouped = "# server.js#594D\n 3│const server = http.createServer();\n*4│server.listen(port);\n\n# lib/\n## config.js#5B6E\n*1│// Port\n*2│const DEFAULT_PORT = 8080;\n*3│module.exports = {};";
+  assert.deepEqual(run("grep", { pattern: "x" }, { cwd: "/repo", files: ["lib/config.js", "server.js", "local://n.md"], displayContent: grouped }).files,
+    [{ path: "/repo/lib/config.js", lines: [[1, 3]] }, { path: "/repo/server.js", lines: [[3, 4]] }]);
+  assert.deepEqual(run("grep", { path: "a.ts", pattern: "x" }, { cwd: "/repo", files: ["a.ts"], displayContent: "  9│ctx\n*10│hit\n   │...\n*40│hit" }).files, [{ path: "/repo/a.ts", lines: [[9, 10], [40, 40]] }]);
+  assert.deepEqual(run("glob", { path: "src/*" }, { cwd: "/repo", files: ["src/a.ts", "src/sub/"] }).listed, ["/repo/src/a.ts", "/repo/src/sub"]);
+  assert.deepEqual(run("find", { query: "q" }, { cwd: "/repo", hits: [{ rel: "docs/b.md" }] }).listed, ["/repo/docs/b.md"]);
+  for (const tool of ["glob", "find", "web_search"]) assert.equal(run(tool, { path: "src" }, { files: ["src/a.ts"] }).files, undefined);
+});
+test("locators name files with line ranges and nothing unchecked; a bare file cites all of it", () => {
+  assert.deepEqual(locatorRefs("a.ts:10-20,30; b/c.md:4+3 (note, see f(x)), d.ts#L5-L9; /abs/e.ts(why)", "/repo"), [
+    { file: "/repo/a.ts", ranges: [[10, 20], [30, 30]] }, { file: "/repo/b/c.md", ranges: [[4, 6]] }, { file: "/repo/d.ts", ranges: [[5, 9]] }, { file: "/abs/e.ts" }]);
+  for (const bad of ["a.ts:20-10", "a.ts:0", "a.ts:5+0"]) assert.throws(() => locatorRefs(bad, "/repo"), /Invalid line range/);
+  for (const bad of ["a.ts:1-3 and b.ts:5", "server.js lines 2-4", "a.ts (note) b.ts", "a.ts (x) b.ts (y)", "https://x.org/y", "agent://Scout", "(only a note)"])
+    assert.throws(() => locatorRefs(bad, "/repo"), /must be a local path with optional line ranges/);
 });
 test("canonical URL strips tracking only, preserving meaningful parameters", () => {
   assert.equal(canonicalUrl("https://EXAMPLE.org/p?b=2&utm_source=x&a=1#part"), "https://example.org/p?a=1&b=2");

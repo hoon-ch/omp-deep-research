@@ -164,7 +164,12 @@ export default function deepResearch(pi: HostAPI): void {
     flushChildUsage(ctx);
     const m = activeMission(ctx);
     if (!m || !m.pass.toolCalls.includes(event.toolCallId) || m.receipts.some(r => r.id === event.toolCallId)) return;
-    persist(makeEvent(m.id, "receipt_recorded", { receipt: buildReceipt(event, spec => ctx.models.resolve(spec), ctx.cwd) }));
+    const receipt = buildReceipt(event, spec => ctx.models.resolve(spec), ctx.cwd);
+    persist(makeEvent(m.id, "receipt_recorded", { receipt }));
+    // A task call the host rejected (e.g. failed validation) or that spawned fewer agents than items must not keep
+    // consuming --max-children. Without host-reported agents, a successful call keeps its charge.
+    const unspawned = event.toolName === "task" && (event.isError || receipt.agents?.length) ? taskItemCount(event.input) - (receipt.agents?.length ?? 0) : 0;
+    if (unspawned > 0) persist(makeEvent(m.id, "children_released", { toolCallId: event.toolCallId, children: unspawned }));
     refresh(ctx);
   });
   pi.on("message_end", (event, ctx) => {

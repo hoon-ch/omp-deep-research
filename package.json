@@ -1,20 +1,46 @@
 {
   "name": "omp-deep-research",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Evidence-driven web/data/mixed research missions for Oh My Pi, inspired by Gajae Code autoresearch.",
   "type": "module",
   "license": "MIT",
   "author": "hoon-ch",
-  "repository": { "type": "git", "url": "git+https://github.com/hoon-ch/omp-deep-research.git" },
-  "keywords": ["omp", "oh-my-pi", "research", "extension", "gajae"],
-  "engines": { "node": ">=22.6.0" },
-  "omp": { "extensions": ["./index.ts"] },
-  "files": ["index.ts", "src/", "skills/", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "docs/"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hoon-ch/omp-deep-research.git"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "research",
+    "extension",
+    "gajae"
+  ],
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "omp": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "skills/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/"
+  ],
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:coverage": "node --experimental-strip-types --experimental-test-coverage --test tests/*.test.ts",
     "check": "tsc --noEmit",
     "verify": "npm run check && npm test"
   },
-  "devDependencies": { "@types/node": "25.1.0", "typescript": "5.8.3" }
+  "devDependencies": {
+    "@types/node": "25.1.0",
+    "typescript": "5.8.3"
+  }
 }

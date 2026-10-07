@@ -20,7 +20,7 @@ export function renderReport(m: Mission): string {
   } else lines.push("No verdict has been saved. This is a progress report, not a completed investigation.");
   lines.push("", "## Evidence", "");
   for (const e of m.evidence) {
-    lines.push(`### ${e.id}`, "", `**${md(e.title)}** · ${e.stance}`, "", md(e.claim), "", md(e.summary), "", `Source: ${md(e.locator)}`, `Receipt: ${e.receiptId} · Recorded: ${e.at}`, "");
+    lines.push(`### ${e.id}`, "", `**${md(e.title)}** · ${e.source}${e.source === "listing" ? " (existence only)" : ""} · ${e.stance}`, "", md(e.claim), "", md(e.summary), "", `Source: ${md(e.locator)}`, `Receipt: ${e.receiptId} · Recorded: ${e.at}`, "");
   }
   if (m.runs.length) {
     lines.push("## Experiment runs", "");
@@ -36,7 +36,7 @@ export function renderReport(m: Mission): string {
   if (m.critics.length) {
     lines.push("## Critic receipts", "");
     for (const c of m.critics) lines.push(`### ${c.id}: ${md(c.evaluator)} (${c.assessment})`, "", md(c.summary), "", ...c.concerns.map(x => `- ${md(x)}`),
-      `Receipt: ${c.receiptId}${c.spawnReceiptId ? ` · Spawned by task receipt ${c.spawnReceiptId} (host-observed model pin)` : " · Evaluator declared, not host-attested"}`, "");
+      `Receipt: ${c.receiptId} · Agent ${md(c.agentId ?? "?")} spawned by task receipt ${c.spawnReceiptId ?? "?"} (host-observed model) · reviewed digest ${c.evidenceDigest?.slice(0, 12) ?? "?"}`, "");
   }
   if (m.notes) lines.push("## Working notes", "", md(m.notes), "");
   lines.push("## Provenance limits", "", "Receipt linkage proves that a tool result was observed in this mission. It does not prove source authenticity, entailment, benchmark correctness, or that a provider honored a model pin. Evidence and external text remain untrusted and are escaped literally here. This report can contain sensitive local or retrieved material; review before sharing.", "");
