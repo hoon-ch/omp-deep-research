@@ -6,7 +6,7 @@
 
 `src/engine.ts` prepares and replays versioned events. `prepareOperation` validates an operation and returns a new event plus its result; the adapter appends the event before returning success. `src/types.ts` defines the persisted data structures. The active OMP branch is the source of truth; the adapter caches one replay per branch tip (keyed by the last research entry), so there is no shared mutable mission state across branches or child sessions.
 
-`src/command.ts` parses explicit operator lifecycle, budget, metric and spec choices. It tokenizes without shell evaluation. `--mode` produces a mission config, `--spec` a config from `src/spec.ts`, and neither produces an intake with operator settings only. Execution permission (`--harness`, `--allow-exec`) cannot be enabled with a model tool call. A critic selector is resolved through the host before the mission or intake is recorded.
+`src/command.ts` parses explicit operator lifecycle, budget, metric and spec choices. It tokenizes without shell evaluation. `--mode` produces a mission config, `--spec` a config from `src/spec.ts`, and neither produces an intake with operator settings only. Execution consent comes from initial `--harness`/`--allow-exec` flags or operator-only `allow harness|exec`/`deny` commands, never a model tool call or an `ask` response. A critic selector is resolved through the host before the mission or intake is recorded.
 
 `src/runs.ts` holds segment-scoped run math (baseline, best, effect/MAD, run table). `src/receipts.ts` turns a tool result into a receipt (hashes, preview, `METRIC`/`ASI`, source references, task model pins and spawned agent ids) and extracts blocking task usage. `src/briefs.ts` holds the critic and iterate briefs and their output schemas. `src/policy.ts` governs known parent tool calls, including the intake allowlist and the `--harness` file/command check. `src/report.ts` performs explicit, append-only local exports with untrusted text escaped. `src/schema.ts` declares the model-visible schema using the host-provided builder. `src/host.ts` is a small structural contract, not a vendored host SDK.
 
@@ -18,6 +18,7 @@
 intake --agent deep_research op:"start" with clarified objective/mode--> active
 intake --operator cancel/clear--> (nothing)
 active/paused --operator mode <m>--> same phase, new mode (mode_set)
+active/paused --operator allow harness|exec / deny--> same phase, new consent (execution_set)
 active --operator pause / abort / error / budget--> paused
 active --inconclusive verdict--> paused
 paused --operator resume (new pass budget)--> active
@@ -29,6 +30,8 @@ unreadable ledger --operator reset-ledger--> (nothing); earlier events stay in h
 ```
 
 The append-only session history survives `clear` and `reset-ledger`; current state is retired logically. Old inconclusive verdicts remain visible after resuming. Conclusive verdicts cannot be silently overwritten by a new model request. Idempotent replay of the exact already-saved verdict remains valid after completion.
+
+`execution_set` records the permission profile and prior flags. `allow harness` sets only `allowHarness`; `allow exec` sets only `allowExec`; `deny` clears both. Grants require data/mixed mode. Replay validates the profile, mode and open phase before applying it. Nothing else changes: evidence, runs, pass id, usage, deadline and remaining budgets survive. The next active-research tool call uses the replayed permission; already-running commands are not stopped. A paused mission stays paused until explicit `resume`. Permissionless data/mixed starts (including intake/spec) instruct the agent to explain the user commands before experiments and save an inconclusive verdict if essential execution remains unauthorized.
 
 ## Evidence flow
 

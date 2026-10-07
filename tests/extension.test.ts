@@ -256,6 +256,43 @@ test("spec command starts from a file; mode command changes an open mission", as
     await h.command("mode data"); assert.equal(h.state().mission!.mode, "data");
   } finally { h.cleanup(); }
 });
+test("operator consent immediately changes active tool gates, including exec downgrade and deny", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode mixed --max-tools 20 Benchmark");
+    const gate = (toolName: string, input: Record<string, unknown>) =>
+      h.emit("tool_call", { toolName, toolCallId: `${toolName}-${h.entries.length}`, input }) as { block?: boolean } | undefined;
+    assert.equal(gate("bash", { command: "bash autoresearch.sh" })?.block, true);
+    await h.command("allow harness");
+    assert.equal(gate("write", { path: "autoresearch.sh" }), undefined);
+    assert.equal(gate("bash", { command: "bash autoresearch.sh" }), undefined);
+    assert.equal(gate("bash", { command: "echo arbitrary" })?.block, true);
+    assert.equal(gate("eval", { code: "1+1" })?.block, true);
+    await h.command("allow exec");
+    assert.equal(gate("bash", { command: "echo arbitrary" }), undefined);
+    assert.equal(gate("eval", { code: "1+1" }), undefined);
+    await h.command("allow harness");
+    assert.equal(gate("eval", { code: "1+1" })?.block, true);
+    assert.equal(gate("bash", { command: "bash autoresearch.sh" }), undefined);
+    assert.equal(gate("write", { path: "product.ts" })?.block, true);
+    await h.command("deny");
+    assert.equal(gate("write", { path: "autoresearch.sh" })?.block, true);
+    assert.equal(gate("bash", { command: "bash autoresearch.sh" })?.block, true);
+    assert.equal(gate("eval", { code: "1+1" })?.block, true);
+    assert.equal(gate("read", { path: "source.md" }), undefined);
+    assert.equal(h.prompts.length, 1); assert.equal(h.state().mission!.phase, "active");
+  } finally { h.cleanup(); }
+});
+test("consent is not granted when persistence fails or a subagent invokes the command", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode data Benchmark");
+    const before = h.state().mission!;
+    h.ctx.agent = { kind: "sub", id: "child-consent", parentId: "session-test" };
+    await h.command("allow exec"); assert.deepEqual(h.state().mission, before);
+    h.ctx.agent = { kind: "main", id: "session-test" }; h.failPersist();
+    await h.command("allow harness"); assert.deepEqual(h.state().mission, before);
+    assert.equal((h.emit("tool_call", { toolName: "bash", toolCallId: "still-denied", input: { command: "bash autoresearch.sh" } }) as { block: boolean }).block, true);
+  } finally { h.cleanup(); }
+});
 test("without UI, command output goes to stderr and intake is refused", async () => {
   const h = mockHost(); const writes: string[] = []; const original = process.stderr.write;
   process.stderr.write = ((chunk: string) => { writes.push(chunk); return true; }) as typeof process.stderr.write;

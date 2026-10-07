@@ -45,6 +45,13 @@ test("operator commands parse spec, mode change, metric and usage budgets", () =
   for (const c of ["--spec a.md extra words", "--metric ms --mode data x", "--mode data --metric ms --direction up x", "mode web extra", "--max-cost 0 --mode web x"])
     assert.throws(() => parseCommand(c));
 });
+test("execution consent commands reject ambiguous or extra arguments", () => {
+  assert.deepEqual(parseCommand("allow harness"), { op: "allow", permission: "harness" });
+  assert.deepEqual(parseCommand("allow exec"), { op: "allow", permission: "exec" });
+  assert.deepEqual(parseCommand("deny"), { op: "deny" });
+  for (const command of ["allow", "allow all", "allow harness exec", "allow --harness", "deny exec"])
+    assert.throws(() => parseCommand(command));
+});
 test("task receipts record pinned or reported models and spawned agent ids", () => {
   const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : undefined;
   const r = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,

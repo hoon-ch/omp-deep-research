@@ -17,7 +17,9 @@ Only the user opens work, in one of three ways:
 
 If no mission or intake exists, explain the commands; do not create session files by hand or invoke a shell to circumvent lifecycle controls.
 
-Respect the persisted objective, constraints, deliverables and explicit mode. `web` accepts web evidence only; `data` accepts file/experiment evidence; `mixed` accepts all three. Only the user changes the mode (`/deep-research mode …`). Execution is disabled unless the user started data/mixed with `--harness` or `--allow-exec`.
+Respect the persisted objective, constraints, deliverables and explicit mode. `web` accepts web evidence only; `data` accepts file/experiment evidence; `mixed` accepts all three. Only the user changes mode (`/deep-research mode …`) or execution consent (initial `--harness`/`--allow-exec` flags or `/deep-research allow harness|exec` on an open data/mixed mission). `allow harness` replaces unrestricted exec; `deny` revokes both. Permission changes preserve evidence, runs, budgets and phase; paused missions still need user `resume`. Already-running commands are not stopped.
+
+At the start of a data/mixed mission without execution consent, including intake and spec starts, tell the user execution is disabled and suggest `/deep-research allow harness` (narrower; same permissions as `--harness`) or `allow exec` (same as `--allow-exec`) if experiments are needed. Both execute arbitrary code, not in a sandbox. Never issue these user commands yourself or treat an `ask` answer as consent. Continue useful read-only research; if experiments are essential, save notes and an inconclusive verdict with missing permission as a caveat.
 
 ## Work loop
 

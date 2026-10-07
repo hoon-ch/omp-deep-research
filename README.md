@@ -2,7 +2,7 @@
 
 **Gajae Code의 autoresearch에서 착안한 Oh My Pi 전용 조사 확장입니다.** 웹·로컬 데이터·실험에서 근거를 모아 구조화된 결론을 남깁니다. OMP 코어를 포크하지 않으며 기존 `/autoresearch` 명령을 변경하지 않습니다.
 
-> 버전 0.2.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
+> 버전 0.2.2입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
 
 ```text
 /deep-research [--mode …]
@@ -30,7 +30,7 @@ Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니�
 OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다. OMP는 git 플러그인을 `bun install`로 받으므로 `bun`이 `PATH`에 있어야 합니다(없으면 `Executable not found in $PATH: "bun"` 오류).
 
 ```bash
-omp plugin install github:hoon-ch/omp-deep-research#v0.2.0
+omp plugin install github:hoon-ch/omp-deep-research#v0.2.2
 omp plugin list            # omp-deep-research 확인
 ```
 
@@ -95,6 +95,19 @@ deep-research-metric-direction: lower
 
 **`--allow-exec`는 임의 코드 실행 권한입니다.** OMP의 `bash`·`eval`을 모두 허용합니다. 두 옵션 모두 `data`/`mixed` 모드 전용입니다. 별도 작업 복사본이나 컨테이너에서 사용하고, 기존 OMP 승인 절차를 유지하십시오.
 
+실행 권한 없이 data/mixed 미션을 시작해도 기존 근거를 버릴 필요가 없습니다. intake나 `--spec`으로 시작한 미션도 같습니다. 실험이 필요하면 에이전트가 다음 사용자 명령을 안내합니다.
+
+```text
+/deep-research allow harness
+/deep-research resume
+```
+
+`allow harness`는 하네스만 허용하며 기존 `exec` 권한을 해제합니다. 임의 `bash`·`eval`이 필요하면 대신 `allow exec`를 사용합니다. `deny`는 두 권한을 모두 해제합니다. 세 명령은 목표·근거·실행 기록·현재 예산과 상태를 유지하고 `execution_set` 이벤트를 원장에 기록합니다. `resume`은 미션이 일시정지된 경우에만 필요합니다.
+
+권한 부여는 active/paused 상태의 data/mixed 미션에서만 가능합니다. web 미션이면 먼저 `mode data` 또는 `mode mixed`로 변경하세요. intake 중이거나 completed/cancelled 상태에서는 권한을 변경할 수 없습니다. 권한이 남아 있으면 web으로 전환하기 전에 `deny`를 실행해야 합니다.
+
+`deny`는 이후 활성 미션의 실행 도구 호출을 차단합니다. 이미 실행 중인 명령을 종료하지 않으며, 일시정지하면 기존 정책대로 부모 세션의 도구 제한이 해제됩니다. `ask` 응답이나 에이전트 도구 호출은 실행 권한을 부여하지 않습니다.
+
 ## 3. 명령과 예산
 
 | 명령/옵션 | 동작 |
@@ -106,6 +119,8 @@ deep-research-metric-direction: lower
 | `/deep-research status` | 목표, 현재 상태, 출처 수, 예산·사용량, 세그먼트, 마지막 결론, 대기 중인 intake |
 | `/deep-research runs` | 현재 세그먼트 실행 표 전체 |
 | `/deep-research mode web\|data\|mixed` | 열린 미션의 모드 변경(사용자 전용). 기존 근거는 유지 |
+| `/deep-research allow harness\|exec` | 열린 data/mixed 미션의 실행 권한 대체. `harness`는 기존 `exec` 해제 |
+| `/deep-research deny` | 열린 미션의 두 실행 권한 해제. 실행 중인 명령은 종료하지 않음 |
 | `/deep-research pause` | 현재 패스를 일시중지하고 중단 요청 |
 | `/deep-research resume` | 근거와 이전 결론을 유지하며 새 예산의 패스 시작 |
 | `/deep-research cancel` | 미션 또는 intake 취소. 자동 재시작 없음 |
@@ -168,8 +183,8 @@ deep-research-metric-direction: lower
 | 항상 허용, 예산 미차감 | `deep_research`, `ask`, `todo`, `wait`, `think` |
 | 허용, 예산 차감 | `read`, `grep`, `find`, `glob`, `ast_grep`, `web_search`, `recall`, 읽기 전용 `github` op, `agent:"scout"` `task` |
 | `data` 모드에서 차단 | `web_search`, `github`, URL 경로를 가진 모든 도구 호출(`read`, `grep` 등은 URL을 직접 가져옴) |
-| `--harness`(data/mixed)에서만 허용 | 루트 `autoresearch.sh`로의 `write`, 정확히 `bash autoresearch.sh` |
-| `--allow-exec`(data/mixed)에서만 허용 | `bash`, `eval`, 루트 `autoresearch.sh`로의 `write` |
+| harness 권한(`--harness` 또는 `allow harness`, data/mixed)에서만 허용 | 루트 `autoresearch.sh`로의 `write`, 정확히 `bash autoresearch.sh` |
+| exec 권한(`--allow-exec` 또는 `allow exec`, data/mixed)에서만 허용 | `bash`, `eval`, 루트 `autoresearch.sh`로의 `write` |
 | 그 외 전부 차단 | `edit`, `ast_edit`, 그 밖의 `write`, `lsp`, `goal`, 알 수 없는 도구 등 |
 
 intake 중에는 위 표와 무관하게 `deep_research`, `ask`, `todo`, `wait`, `think`만 허용됩니다.

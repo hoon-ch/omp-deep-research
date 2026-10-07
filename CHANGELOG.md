@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 — 2026-10-07
+
+- Operator-only `/deep-research allow harness|exec` and `deny` replace execution consent on an open mission and record `execution_set` with the prior flags. Grants require data/mixed mode; `allow harness` revokes unrestricted exec and `deny` clears both permissions. Existing evidence, runs, phase and pass budgets remain unchanged; a paused mission still needs explicit `resume`. Revocation does not stop already-running commands.
+- Permissionless data/mixed missions, including intake and spec starts, now guide the user to the permission commands before experiments. `ask` answers and model tool calls never grant consent; essential unauthorized experiments produce an honest inconclusive verdict rather than restarting the mission.
+
 ## 0.2.1 — 2026-10-07
 
 - **Fix:** file evidence was not checked against what was actually read, so a scout report read at `agent://<id>`, or a receipt for one file, could back a claim about another file. Read-like receipts now record the local paths they covered, and file evidence must cite files those paths cover; `task` summaries and `agent://` reads are rejected for file and experiment evidence.

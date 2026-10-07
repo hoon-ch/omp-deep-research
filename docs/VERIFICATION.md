@@ -1,16 +1,16 @@
 # Verification record
 
-**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.1`
+**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.2`
 
 This is a record of verification, not a production-readiness claim.
-Published at <https://github.com/hoon-ch/omp-deep-research> (tags `v0.2.0`, `v0.2.1`); GitHub Actions passed for `main` and both tags (Node 22 and 24). `v0.2.1` is installed on all three hosts (link on the development Mac).
+Published at <https://github.com/hoon-ch/omp-deep-research>. Historical tags `v0.2.0` and `v0.2.1` passed GitHub Actions (Node 22 and 24); rollout evidence for `v0.2.2` is recorded below.
 
 ## Executed locally
 
 | Check | Result |
 |---|---|
 | `npm run check` | Passed with TypeScript 5.8.3, strict/noUncheckedIndexedAccess |
-| `npm test` | **95 tests passed; 0 failed, 0 skipped** |
+| `npm test` | **101 tests passed; 0 failed, 0 skipped** |
 | OMP 18.6.1 interactive load (`omp -e <repo>`) | Extension loaded; `/deep-research status` rendered `{"mission": null}` |
 | OMP 18.6.1 live web missions (2 runs, small budgets) | `read` URL → receipt → evidence → conclusive verdict → `completed`; ledger held `mission_created`, `tool_counted`, `receipt_recorded`, `evidence_added`, `verdict_issued`; `todo` allowed and not counted (`1/4 tools`) |
 | OMP 18.6.1 live `--mode data --harness` mission | Agent wrote `./autoresearch.sh` (wraps an existing `bench.js`, emits `METRIC`), ran `bash autoresearch.sh`; no policy blocks; run `R1` = `baseline` from observed metrics; file + experiment evidence; conclusive verdict |
@@ -26,6 +26,10 @@ Published at <https://github.com/hoon-ch/omp-deep-research> (tags `v0.2.0`, `v0.
 | Plugin install from GitHub | `omp plugin install github:hoon-ch/omp-deep-research#v0.2.0` succeeded on macOS/OMP 18.7.0 and Linux/OMP 18.6.1 (the Linux host first needed `bun` on `PATH`; OMP shells out to it). `omp plugin link <checkout>` on macOS/OMP 18.7.0. On all three, `omp read skill://deep-research` resolved the skill from the plugin root and an RPC session answered `/deep-research help` and `status` |
 | Field report (0.2.0, respeaker repo, intake → `mixed`, 5 scouts) | Two file evidence items were backed by a scout report (`read agent://FirmwareWakePipeline`) and by a receipt for a different file (`docs/validation-log.md` cited for `session_fsm.py`); 4 of 7 findings cited them. Fixed in 0.2.1 |
 | OMP 18.7.0 live `--mode data` mission after the 0.2.1 fix (this repository) | All 4 file evidence items cited `read`/`grep` receipts whose recorded paths covered the locator files; conclusive verdict. File-level coverage only: line ranges inside a read file are not checked |
+| OMP 18.7.0 live permission transition (`--mode data`, RPC, disposable workspace) | Without permission, the agent explained `allow harness`/`allow exec`, wrote no harness and saved an inconclusive verdict. User `allow harness` preserved the paused mission; explicit `resume` wrote and ran the harness, observed `METRIC sample=7`, recorded a baseline run and experiment evidence, and saved a second inconclusive verdict as requested |
+| OMP 18.7.0 live permission commands on that paused mission | `allow exec` → `allow harness` → `deny` recorded replacement profiles without another agent turn or pass. Same mission id, evidence and runs remained. `mode web` after deny succeeded; `allow exec` in web mode was rejected without a new ledger event. OMP exited 0 |
+| OMP 18.7.0 live permissionless `--spec plan.md` (mixed mode, RPC) | Agent explained the permission commands, created no harness, and saved an inconclusive verdict; OMP exited 0 |
+| Throwaway intake-start smoke against the real extension factory | Bare command opened intake; `op:"start"` in data mode returned the permission guidance in its result while both permission flags remained false. This was an adapter smoke, not an interactive `ask` UI run |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
@@ -36,6 +40,7 @@ OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit hand
 - Mission and intake lifecycle (intake blocks research tools, `start` keeps operator settings, cancel retires it), explicit mode checks, operator `mode_set`, bounded passes, pause/resume/cancel/clear, branch-local replay and schema-version rejection, `reset-ledger` recovery and fail-closed tool blocking on an unreadable ledger.
 - `--harness`: only a regular, unlinked root `autoresearch.sh` is writable (symlink, hard link, sibling, parent, `~`, internal-URL paths rejected); only an exact, synchronous `bash autoresearch.sh` in the session root runs (chained commands, `cd …&&`, `async`, services, other `cwd` rejected).
 - Spec parsing (mode required, H1 objective, constraints, deliverables/acceptance criteria, metric pair) and flag conflicts; `--metric`, `--max-tokens`, `--max-cost` parsing.
+- Mid-mission consent: strict command arguments, open-phase and data/mixed grant checks, exec-to-harness downgrade, deny blocking active harness writes/runs and eval, unchanged work/pass during replay, branch-local consent, malformed permission events, model-tool and subagent refusal, persistence failure leaving permission disabled.
 - Segments: metric fixed per segment, new segment may change it, per-segment baseline/best; declared metric enforced from the first run; `ASI` typed parsing; effect/MAD with 3+ valid runs and flagged-run exclusion.
 - Critic and iterate briefs; critic attestation (unpinned task, wrong model, unlinked response all rejected); task receipt model/agent-id extraction from async spawn text and blocking `details.results`.
 - Request-ID idempotence, including a repeated verdict after the mission becomes terminal.

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { budgetReason, ENTRY_TYPE, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
+import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
-import { blockedReason, childBlockedReason, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY, taskItemCount } from "./src/policy.ts";
+import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY, taskItemCount } from "./src/policy.ts";
 import { buildReceipt } from "./src/receipts.ts";
 import { exportReport } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
@@ -226,7 +226,7 @@ export default function deepResearch(pi: HostAPI): void {
         if (prepared.event) persist(prepared.event);
         // A mission started mid-turn has not seen the mission system policy yet; return it with the start result.
         const result = raw.op === "export" ? exportReport(s, ctx.cwd)
-          : raw.op === "start" && prepared.event ? { ...object(prepared.result), next: "Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", policy: SYSTEM_POLICY } : prepared.result;
+          : raw.op === "start" && prepared.event ? { ...object(prepared.result), next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(state(ctx).mission!)].filter(Boolean).join(" "), policy: SYSTEM_POLICY } : prepared.result;
         refresh(ctx);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: { result } };
       } catch (error) {
@@ -243,7 +243,7 @@ export default function deepResearch(pi: HostAPI): void {
     if (settings.criticModel === modelId(ctx)) throw new ResearchError("Select a critic model distinct from the main research model");
   }
   pi.registerCommand("deep-research", {
-    description: "Evidence-driven web/data/mixed research; intake, spec, harness, status, runs, mode, pause, resume, cancel, clear, export",
+    description: "Evidence-driven web/data/mixed research; intake, spec, harness, status, runs, mode, allow, deny, pause, resume, cancel, clear, export",
     async handler(args, ctx) {
       try {
         if (!isMain(ctx)) throw new ResearchError("Start research in the main OMP session");
@@ -265,6 +265,16 @@ export default function deepResearch(pi: HostAPI): void {
         if (command.op === "mode") {
           persist(modeEvent(state(ctx), command.mode)); refresh(ctx);
           output(ctx, `Mission mode set to ${command.mode}. Existing evidence is kept; new evidence and tools follow the new mode.`); return;
+        }
+        if (command.op === "allow" || command.op === "deny") {
+          const permission = command.op === "allow" ? command.permission : "deny";
+          persist(executionEvent(state(ctx), permission)); refresh(ctx);
+          output(ctx, permission === "deny"
+            ? "Execution permission revoked. Future active-research harness writes and bash/eval calls are blocked; already-running commands are not stopped."
+            : permission === "harness"
+              ? "Harness permission enabled; unrestricted exec revoked. Only writing ./autoresearch.sh and running `bash autoresearch.sh` are allowed. The harness is arbitrary code, not an OS sandbox."
+              : "Exec permission enabled: bash/eval can modify your machine. This is not an OS sandbox.", permission === "deny" ? "info" : "warning");
+          output(ctx, "Existing evidence, phase and budgets are kept. If paused, use /deep-research resume to continue."); return;
         }
         if (["pause", "cancel", "clear"].includes(command.op)) {
           const before = state(ctx);
@@ -293,11 +303,14 @@ export default function deepResearch(pi: HostAPI): void {
           else if (settings.allowHarness) output(ctx, "Harness enabled by --harness: the agent may write and run ./autoresearch.sh, which is arbitrary code. This is not an OS sandbox.", "warning");
         } else if (command.op === "resume") persist(lifecycleEvent(state(ctx), "resume"));
         refresh(ctx);
+        const mission = state(ctx).mission;
+        const guidance = command.op !== "intake" && mission ? executionGuidance(mission) : undefined;
+        if (guidance) output(ctx, "Execution is disabled. If experiments are needed, use /deep-research allow harness (narrower) or allow exec (arbitrary bash/eval).");
         // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`
           : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Split it into sub-questions; if two or more are independent, fan them out to cheap scouts via deep_research(op='read',view='explore') and one task call before searching yourself. Inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
-            "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass.", { attribution: "agent" });
+            "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass. " + (guidance ?? ""), { attribution: "agent" });
       } catch (error) {
         output(ctx, messageOf(error), "error");
       }

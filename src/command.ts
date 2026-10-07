@@ -8,7 +8,8 @@ export type Command =
   | { op: "intake"; draft: string; settings: MissionSettings }
   | { op: "spec"; path: string; mode?: Mode; settings: MissionSettings }
   | { op: "mode"; mode: Mode }
-  | { op: "help" | "status" | "runs" | "resume" | "pause" | "cancel" | "clear" | "export" | "reset-ledger" };
+  | { op: "allow"; permission: "harness" | "exec" }
+  | { op: "help" | "status" | "runs" | "resume" | "pause" | "cancel" | "clear" | "export" | "reset-ledger" | "deny" };
 /** Tokenizes command arguments; never evaluates shell syntax. */
 export function tokenize(input: string): string[] {
   const out: string[] = []; let token = ""; let quote = ""; let escaped = false; let started = false;
@@ -28,7 +29,7 @@ export function tokenize(input: string): string[] {
 export function parseCommand(args: string, primaryModel?: string): Command {
   const tokens = tokenize(args);
   if (!tokens.length) return { op: "help" };
-  const simple = ["help", "status", "runs", "resume", "pause", "cancel", "clear", "export", "reset-ledger"] as const;
+  const simple = ["help", "status", "runs", "resume", "pause", "cancel", "clear", "export", "reset-ledger", "deny"] as const;
   if (simple.includes(tokens[0] as typeof simple[number])) {
     if (tokens.length !== 1) throw new ResearchError(`${tokens[0]} does not accept arguments`);
     return { op: tokens[0] as typeof simple[number] };
@@ -36,6 +37,10 @@ export function parseCommand(args: string, primaryModel?: string): Command {
   if (tokens[0] === "mode") {
     if (tokens.length !== 2) throw new ResearchError("Usage: /deep-research mode web|data|mixed");
     return { op: "mode", mode: choice(tokens[1], MODES, "mode") };
+  }
+  if (tokens[0] === "allow") {
+    if (tokens.length !== 2) throw new ResearchError("Usage: /deep-research allow harness|exec");
+    return { op: "allow", permission: choice(tokens[1], ["harness", "exec"], "permission") };
   }
   if (tokens[0] === "start") tokens.shift();
   const settings = structuredClone(DEFAULT_SETTINGS);
@@ -92,6 +97,8 @@ export const HELP = `Deep Research (Gajae-inspired, not OMP's native /autoresear
 /deep-research --mode data --harness <objective>   allow the ./autoresearch.sh benchmark harness
 /deep-research status | runs | pause | resume | cancel | clear | export
 /deep-research mode web|data|mixed             change an open mission's mode
+/deep-research allow harness|exec              replace an open data/mixed mission's execution permission
+/deep-research deny                            revoke both harness and exec permission
 /deep-research reset-ledger                    retire an unreadable research ledger
 Options: --budget 0..8 (default 6); --max-tools 1..1000 (default 60);
 --max-children 0..32 subagents per pass (default 8);
@@ -101,6 +108,8 @@ Options: --budget 0..8 (default 6); --max-tools 1..1000 (default 60);
 Execution is OFF by default. --harness (data/mixed) allows writing only
 ./autoresearch.sh and running exactly \`bash autoresearch.sh\`; the harness
 itself is arbitrary code. --allow-exec (data/mixed) authorizes any bash/eval.
-Neither is a sandbox. Mode is never inferred from files.
+Neither is a sandbox. allow/deny preserve evidence, phase and budgets; a paused
+mission still needs resume. deny does not stop already-running commands.
+Mode is never inferred from files.
 Clear retires the mission but never deletes its append-only session history.
 Resume starts a new bounded pass and preserves evidence and past verdicts.`;

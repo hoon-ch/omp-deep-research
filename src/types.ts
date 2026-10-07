@@ -172,7 +172,7 @@ export interface Mission extends MissionConfig {
 export type EventType =
   | "ledger_reset"
   | "intake_started" | "intake_cancelled"
-  | "mission_created" | "mode_set" | "pass_resumed" | "pass_paused" | "mission_cancelled" | "mission_cleared"
+  | "mission_created" | "mode_set" | "execution_set" | "pass_resumed" | "pass_paused" | "mission_cancelled" | "mission_cleared"
   | "tool_counted" | "receipt_recorded" | "continuation_requested"
   | "evidence_added" | "segment_started" | "run_logged" | "run_flagged" | "notes_updated"
   | "usage_recorded" | "critic_recorded" | "verdict_issued";

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, resetEvent, restore, startEvent } from "../src/engine.ts";
+import { budgetReason, DEFAULT_SETTINGS, ENTRY_TYPE, evidenceDigest, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, resetEvent, restore, startEvent } from "../src/engine.ts";
 import { bestRun, effectToNoise } from "../src/runs.ts";
 import { Ledger, NOW, VERDICT } from "./helpers.ts";
 
@@ -17,6 +17,50 @@ test("rejects invalid or unsafe config", () => {
 test("does not replace active or paused missions", () => {
   const l = new Ledger(); l.start(); assert.throws(() => l.start(), /open mission/);
   l.add(lifecycleEvent(l.state(), "pause", NOW)); assert.throws(() => l.start(), /open mission/);
+});
+test("permission changes replay without losing work, resetting budgets or resuming a paused pass", () => {
+  const l = new Ledger(); l.start({ mode: "mixed" }); l.evidence();
+  l.add(makeEvent(l.state().mission!.id, "tool_counted", { toolCallId: "read-1" }, NOW));
+  l.add(makeEvent(l.state().mission!.id, "usage_recorded", { tokens: 1234, cost: 0.02 }, NOW));
+  l.op({ op: "notes", notes: "Experiment still needs consent" });
+  l.add(lifecycleEvent(l.state(), "pause", NOW));
+  const before = l.state().mission!; const branch = [...l.entries];
+  for (const permission of ["harness", "exec", "harness", "deny"] as const) {
+    const event = executionEvent(l.state(), permission, NOW);
+    assert.deepEqual((event.data as { previous: unknown }).previous, { allowHarness: l.state().mission!.allowHarness, allowExec: l.state().mission!.allowExec });
+    l.add(event);
+    assert.deepEqual(l.state().mission, { ...before, allowHarness: permission === "harness", allowExec: permission === "exec" });
+  }
+  assert.deepEqual(restore(branch).mission, before);
+  l.add(lifecycleEvent(l.state(), "resume", NOW));
+  assert.equal(l.state().mission!.allowHarness, false); assert.equal(l.state().mission!.allowExec, false);
+});
+test("permission grants require an open data/mixed mission and cannot be issued through the agent tool", () => {
+  const l = new Ledger();
+  assert.throws(() => executionEvent(l.state(), "exec", NOW), /No mission/);
+  l.add(intakeEvent(l.state(), "goal", DEFAULT_SETTINGS, NOW));
+  assert.throws(() => executionEvent(l.state(), "harness", NOW), /Intake/);
+  l.op({ op: "start", mission: { objective: "goal", mode: "web", constraints: [], deliverables: [], allowExec: true, allowHarness: true } });
+  assert.equal(l.state().mission!.allowExec, false); assert.equal(l.state().mission!.allowHarness, false);
+  assert.throws(() => executionEvent(l.state(), "exec", NOW), /data\/mixed/);
+  assert.throws(() => executionEvent(l.state(), "harness", NOW), /data\/mixed/);
+  for (const op of ["allow", "deny", "execution_set"])
+    assert.throws(() => l.op({ op, permission: "exec" }), /op must be/);
+  l.add(modeEvent(l.state(), "mixed", NOW)); l.add(executionEvent(l.state(), "exec", NOW));
+  assert.throws(() => modeEvent(l.state(), "web", NOW), /only supported/);
+  l.add(executionEvent(l.state(), "deny", NOW)); l.add(modeEvent(l.state(), "web", NOW));
+  l.evidence(); l.op({ op: "verdict", verdict: VERDICT });
+  assert.throws(() => executionEvent(l.state(), "deny", NOW), /only an open mission/);
+  const cancelled = new Ledger(); cancelled.start({ mode: "data" });
+  cancelled.add(lifecycleEvent(cancelled.state(), "cancel", NOW));
+  assert.throws(() => executionEvent(cancelled.state(), "harness", NOW), /only an open mission/);
+});
+test("invalid execution events fail closed during replay", () => {
+  for (const permission of ["unknown", "exec"]) {
+    const l = new Ledger(); l.start();
+    l.add(makeEvent(l.state().mission!.id, "execution_set", { permission }, NOW));
+    assert.throws(() => l.state(), /permission must be|data\/mixed/);
+  }
 });
 test("replays only custom entries in the selected branch", () => {
   const l = new Ledger(); l.start(); const branch = [...l.entries]; l.evidence();

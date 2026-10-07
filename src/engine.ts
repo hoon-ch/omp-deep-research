@@ -6,7 +6,7 @@ import { coversFile, LOCAL_READ_TOOLS, locatorFiles } from "./receipts.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
-const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
+const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "execution_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
 export const DEFAULT_SETTINGS: MissionSettings = {
   constraints: ["Research only; do not implement or modify product code."],
   deliverables: ["A structured verdict with evidence, caveats, and a reproducible report."],
@@ -96,6 +96,10 @@ function apply(state: ResearchState, event: LedgerEvent): void {
   switch (event.type) {
     case "mission_cleared": state.mission = undefined; break;
     case "mode_set": { const mode = choice(d.mode, ["web", "data", "mixed"], "mode"); assertModeConsent(mode, m); m.mode = mode; break; }
+    case "execution_set": {
+      const settings = executionSettings(m, d.permission);
+      m.allowHarness = settings.allowHarness; m.allowExec = settings.allowExec; break;
+    }
     case "pass_resumed": m.phase = "active"; m.pass = structuredClone(d.pass) as Pass; delete m.pauseReason; break;
     case "pass_paused": m.phase = "paused"; m.pauseReason = text(d.reason, "reason"); break;
     case "mission_cancelled": m.phase = "cancelled"; m.pauseReason = text(d.reason, "reason"); break;
@@ -186,6 +190,19 @@ export function modeEvent(state: ResearchState, mode: Mode, at = new Date().toIS
   if (m.mode === mode) throw new ResearchError(`Mission is already in ${mode} mode`);
   assertModeConsent(mode, m);
   return makeEvent(m.id, "mode_set", { mode, previousMode: m.mode }, at);
+}
+/** Permission profiles replace rather than accumulate; choosing harness also revokes unrestricted exec. */
+function executionSettings(m: Mission, raw: unknown): { allowHarness: boolean; allowExec: boolean } {
+  if (m.phase !== "active" && m.phase !== "paused") throw new ResearchError(`Mission is ${m.phase}; only an open mission can change execution permission`);
+  const permission = choice(raw, ["harness", "exec", "deny"], "permission");
+  if (permission !== "deny" && m.mode === "web") throw new ResearchError("Execution permission is only supported in data/mixed mode; use /deep-research mode data|mixed first");
+  return { allowHarness: permission === "harness", allowExec: permission === "exec" };
+}
+/** Operator-only consent, independent of pass lifecycle and budgets. */
+export function executionEvent(state: ResearchState, permission: "harness" | "exec" | "deny", at = new Date().toISOString()): LedgerEvent {
+  const m = current(state);
+  executionSettings(m, permission);
+  return makeEvent(m.id, "execution_set", { permission, previous: { allowHarness: m.allowHarness, allowExec: m.allowExec } }, at);
 }
 export function lifecycleEvent(state: ResearchState, op: "resume" | "pause" | "cancel" | "clear", at = new Date().toISOString(), reason?: string): LedgerEvent {
   if (state.intake) {
