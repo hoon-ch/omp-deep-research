@@ -1,6 +1,6 @@
 # Verification record
 
-**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.1.0` + Unreleased changes
+**Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.0`
 
 This is a record of local verification, not a production-readiness claim.
 No GitHub repository, push, or GitHub Actions run is recorded here.
@@ -21,8 +21,7 @@ No GitHub repository, push, or GitHub Actions run is recorded here.
 | OMP 18.6.1 live web mission with critic, after adding `outputSchema` to the brief | Scout task item carried the brief's `outputSchema`; critic answered in the critic shape; attested critic record and conclusive verdict |
 | OMP 18.6.1 live lifecycle | `pause` (aborted the turn) → `mode data` → `status` (paused, data) → `resume` (new pass, `0/6 tools`) → `cancel`; ledger held `mode_set`, `pass_paused`, `pass_resumed`, `mission_cancelled`. `runs` and `export` worked on a completed mission; `mode` on it was refused |
 | OMP 18.6.1 headless | `omp --mode rpc --no-ui`: `/deep-research --mode web …` as a `prompt` ran to a conclusive verdict and `session_settled`; `status` went to stderr. `omp -p`: `help` printed to stderr; intake and mission start were refused with guidance (the host drops a command's queued turn and never wrote a session file) |
-| OMP 18.6.1 live scout fan-out (`--mode web --max-children 4`, three tools to compare) | Agent read `view:"explore"`, spawned 3 scouts in one `task` call without a model pin; host resolved them to the user's `@smol` role (`alibaba-token-plan/qwen3.8-flash:medium`, `modelRole: "smol"`). Status `3/4 scouts`; `usage_recorded {source:"children"}` events persisted ~1.16M scout tokens out of ~2.0M total; main model re-read leads, recorded 5 evidence items and a conclusive verdict. On two easier questions answerable from one known API the agent chose not to fan out |
-| `bash -n scripts/publish-github.sh` | Passed |
+| OMP 18.6.1 live scout fan-out (`--mode web --max-children 4`, three tools to compare) | Agent read `view:"explore"`, spawned 3 scouts in one `task` call without a model pin; host resolved them through the user's `@smol` role (`modelRole: "smol"`, a cheap flash-class model). Status `3/4 scouts`; `usage_recorded {source:"children"}` events persisted ~1.16M scout tokens out of ~2.0M total; main model re-read leads, recorded 5 evidence items and a conclusive verdict. On two easier questions answerable from one known API the agent chose not to fan out |
 | `npm pack --dry-run` | Passed; 21 files, packaging only |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
@@ -44,14 +43,13 @@ OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit hand
 - Subagents: each `task` item counts against `--max-children` (oversized batches blocked, explore brief reports `childrenLeft`); a scout bound to an active `data` mission is denied web tools, its usage is persisted only by the main session as `children` usage, it is blocked once the mission pauses, and a scout first seen with no active mission is not governed.
 - No load-time side effects, no existing `/autoresearch` replacement, and no dynamic source material interpolated into the system prompt.
 - Explicit-only report creation, traversal/symlink rejection, no report overwrite, valid Markdown/JSON/JSONL output, escaped untrusted text.
-- Publishing script syntax, private default, explicit public selection and rejection of unsupported flags.
 
 ## Not executed or guaranteed
 
 1. **Real OMP integration (partial):** observed live: loading, TUI commands, intake via `ask`, spec intake, harness write/run, segments, iterate brief, attested critic, token metering, pause/mode/resume/cancel, runs/export, RPC headless, print-mode refusal, one `session_stop` continuation. Not observed live: branch switching, compaction, `reset-ledger` on a real corrupted session, `--max-cost` exhaustion, `--allow-exec`.
 2. **Live evaluation:** small benchmarks only; effect/MAD never reached three runs in a live segment.
 3. **Remote changes:** repository creation, push, npm publication and GitHub Actions execution did not occur. The supplied publish helper performs remote writes only when the user runs it in an authenticated local environment.
-4. **Security and cost isolation:** read-only policy and budgets are not an OS sandbox, a kill switch for running commands, or a meter for async task children.
+4. **Security and cost isolation:** read-only policy and budgets are not an OS sandbox or a kill switch for running commands; subagent governance and metering rely on OMP running subagents in-process.
 5. **Evidence truth:** receipts record observed tool results; they do not automatically establish source authenticity, entailment, statistical significance or independent reviewer identity.
 
 ## Installed-host smoke checklist

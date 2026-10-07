@@ -2,7 +2,7 @@
 
 **Gajae Code의 autoresearch에서 착안한 Oh My Pi 전용 조사 확장입니다.** 웹·로컬 데이터·실험에서 근거를 모아 구조화된 결론을 남깁니다. OMP 코어를 포크하지 않으며 기존 `/autoresearch` 명령을 변경하지 않습니다.
 
-> 초기 버전 0.1.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다. `scripts/publish-github.sh`는 사용자가 실행할 때만 원격 저장소를 만들고 push합니다.
+> 버전 0.2.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
 
 ```text
 /deep-research [--mode …]
@@ -25,30 +25,25 @@
 
 Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니다. `gjc`, `.gjc/` 상태, Gajae의 Python 커널, goal 명령에 의존하지 않습니다. 차이는 [호환성 문서](docs/COMPATIBILITY.md)에 정리했습니다.
 
-## 1. 바로 로드하기
+## 1. 설치
 
-**OMP가 이미 설치된 환경**에서 실행합니다. 런타임 외부 npm 의존성이 없어 이 확장을 로드하기 위한 `npm install`이나 빌드는 필요 없습니다.
-
-```bash
-cd omp-deep-research
-omp -e "$PWD"
-```
-
-OMP를 프로젝트 작업 디렉터리에서 실행하려면 확장 경로를 지정합니다.
+OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다.
 
 ```bash
-cd /path/to/your-project
-omp -e /absolute/path/to/omp-deep-research
+omp plugin install github:hoon-ch/omp-deep-research#v0.2.0
+omp plugin list            # omp-deep-research 확인
 ```
 
-항상 로드하려면 현재 OMP 프로필의 설정 파일에 아래 **항목을 병합**합니다. 기존 `extensions` 목록이나 설정 파일 전체를 덮어쓰지 마십시오. 기본 프로필의 사용자 설정 경로는 `~/.omp/agent/config.yml`입니다.
+설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.3.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
 
-```yaml
-extensions:
-  - /absolute/path/to/omp-deep-research
+이 저장소를 고치면서 쓰는 개발 머신에서는 체크아웃을 그대로 연결합니다. 저장소를 수정한 뒤 `omp`만 다시 시작하면 반영됩니다.
+
+```bash
+git clone https://github.com/hoon-ch/omp-deep-research ~/repos/omp-deep-research
+omp plugin link ~/repos/omp-deep-research
 ```
 
-확인한 OMP 로딩 문서: [extension-loading.md](https://github.com/can1357/oh-my-pi/blob/main/docs/extension-loading.md). 먼저 `-e`로 시험한 뒤 상시 로드를 권합니다. `skills/deep-research/SKILL.md`만 복사하면 상태 도구가 등록되지 않으므로 동작하지 않습니다.
+설치 없이 한 번만 써 보려면 `omp -e /absolute/path/to/omp-deep-research`로 실행합니다. 플러그인으로 설치한 상태에서 `-e`를 같이 쓰거나 `~/.omp/agent/extensions/`에 복사본을 두면 같은 확장이 두 번 로드되므로 하나만 쓰십시오. `skills/deep-research/SKILL.md`만 복사하면 상태 도구가 등록되지 않으므로 동작하지 않습니다.
 
 ## 2. 사용 예시
 
@@ -239,20 +234,7 @@ npm run verify
 npm pack --dry-run
 ```
 
-GitHub Actions에는 Node 22/24용 CI 정의를 포함했습니다. **CI를 원격에서 실행했다는 뜻은 아닙니다.** 실제 검증 범위와 남은 OMP 실기 테스트는 [VERIFICATION.md](docs/VERIFICATION.md)를 확인하십시오.
-
-## 8. hoon-ch GitHub 저장소 생성·업로드
-
-현재 소스에는 원격 인증정보가 없습니다. GitHub CLI가 로그인된 사용자 환경에서 다음을 실행하면 `hoon-ch/omp-deep-research`를 생성하고 초기 커밋을 push합니다.
-
-```bash
-bash scripts/publish-github.sh --dry-run
-bash scripts/publish-github.sh
-```
-
-**기본 공개 범위는 private**입니다. 공개 저장소를 의도적으로 만들 때만 `--public`을 전달합니다.
-
-스크립트는 로그인 계정이 `hoon-ch`인지 확인합니다. 같은 원격 저장소 또는 로컬 remote가 이미 있으면 덮어쓰지 않고 중단합니다. 토큰을 받거나 출력하지 않으며 force-push하지 않습니다. 부분 실패 후 이미 원격 저장소가 만들어진 상태라면 재실행으로 강제 복구하지 말고 GitHub 상태를 먼저 확인하십시오.
+GitHub Actions는 Node 22/24에서 `npm run verify`와 `npm pack --dry-run`을 실행합니다. 실제 검증 범위와 남은 OMP 실기 테스트는 [VERIFICATION.md](docs/VERIFICATION.md)를 확인하십시오.
 
 ## 설계 문서
 

@@ -14,6 +14,6 @@ This extension is an in-process research workflow, not a sandbox or security bou
 - OMP stores session entries using its existing session persistence. Exports use owner-only file permissions where supported and refuse pre-existing symlink directories, but are not an adversarial multi-process filesystem sandbox.
 - Session data and exports can contain local file paths, query results, proprietary facts and small source previews. There is no telemetry or automatic publication. Do not publish `.omp/`, session files, secrets, or research reports without review.
 - `clear` retires a mission logically; it is not secure deletion. Source records remain in the underlying OMP session until the operator removes that session using the host's own controls.
-- The publish helper defaults to a private repository, checks the authenticated account is `hoon-ch`, refuses existing repositories/remotes, uses an explicit source-file allowlist, and never force-pushes. Do not paste GitHub tokens into prompts or this project.
+- Do not paste API keys or GitHub tokens into research prompts; tool inputs and previews are persisted in the session.
 
-Report vulnerabilities privately to the repository owner through an available private GitHub channel. Do not include secrets in public issues. No private-reporting channel is assumed to exist before the repository is created.
+Report vulnerabilities privately through GitHub's private vulnerability reporting (repository **Security** tab → **Report a vulnerability**). Do not include secrets in public issues.

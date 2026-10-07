@@ -17,5 +17,4 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run verify
-      - run: bash -n scripts/publish-github.sh
       - run: npm pack --dry-run
