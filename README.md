@@ -27,7 +27,7 @@ Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니�
 
 ## 1. 설치
 
-OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다.
+OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다. OMP는 git 플러그인을 `bun install`로 받으므로 `bun`이 `PATH`에 있어야 합니다(없으면 `Executable not found in $PATH: "bun"` 오류).
 
 ```bash
 omp plugin install github:hoon-ch/omp-deep-research#v0.2.0

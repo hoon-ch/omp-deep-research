@@ -2,15 +2,15 @@
 
 **Date:** 2026-10-07 · **Package:** `omp-deep-research@0.2.0`
 
-This is a record of local verification, not a production-readiness claim.
-No GitHub repository, push, or GitHub Actions run is recorded here.
+This is a record of verification, not a production-readiness claim.
+Published at <https://github.com/hoon-ch/omp-deep-research> (tag `v0.2.0`); GitHub Actions passed for `main` and `v0.2.0` (Node 22 and 24).
 
 ## Executed locally
 
 | Check | Result |
 |---|---|
 | `npm run check` | Passed with TypeScript 5.8.3, strict/noUncheckedIndexedAccess |
-| `npm test` | **97 tests passed; 0 failed, 0 skipped** |
+| `npm test` | **93 tests passed; 0 failed, 0 skipped** |
 | OMP 18.6.1 interactive load (`omp -e <repo>`) | Extension loaded; `/deep-research status` rendered `{"mission": null}` |
 | OMP 18.6.1 live web missions (2 runs, small budgets) | `read` URL → receipt → evidence → conclusive verdict → `completed`; ledger held `mission_created`, `tool_counted`, `receipt_recorded`, `evidence_added`, `verdict_issued`; `todo` allowed and not counted (`1/4 tools`) |
 | OMP 18.6.1 live `--mode data --harness` mission | Agent wrote `./autoresearch.sh` (wraps an existing `bench.js`, emits `METRIC`), ran `bash autoresearch.sh`; no policy blocks; run `R1` = `baseline` from observed metrics; file + experiment evidence; conclusive verdict |
@@ -23,6 +23,7 @@ No GitHub repository, push, or GitHub Actions run is recorded here.
 | OMP 18.6.1 headless | `omp --mode rpc --no-ui`: `/deep-research --mode web …` as a `prompt` ran to a conclusive verdict and `session_settled`; `status` went to stderr. `omp -p`: `help` printed to stderr; intake and mission start were refused with guidance (the host drops a command's queued turn and never wrote a session file) |
 | OMP 18.6.1 live scout fan-out (`--mode web --max-children 4`, three tools to compare) | Agent read `view:"explore"`, spawned 3 scouts in one `task` call without a model pin; host resolved them through the user's `@smol` role (`modelRole: "smol"`, a cheap flash-class model). Status `3/4 scouts`; `usage_recorded {source:"children"}` events persisted ~1.16M scout tokens out of ~2.0M total; main model re-read leads, recorded 5 evidence items and a conclusive verdict. On two easier questions answerable from one known API the agent chose not to fan out |
 | `npm pack --dry-run` | Passed; 21 files, packaging only |
+| Plugin install from GitHub | `omp plugin install github:hoon-ch/omp-deep-research#v0.2.0` succeeded on macOS/OMP 18.7.0 and Linux/OMP 18.6.1 (the Linux host first needed `bun` on `PATH`; OMP shells out to it). `omp plugin link <checkout>` on macOS/OMP 18.7.0. On all three, `omp read skill://deep-research` resolved the skill from the plugin root and an RPC session answered `/deep-research help` and `status` |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**, OMP **18.6.1** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
@@ -48,7 +49,7 @@ OMP facts used by the adapter (tool names, `GITHUB_READONLY_OPS`, bash exit hand
 
 1. **Real OMP integration (partial):** observed live: loading, TUI commands, intake via `ask`, spec intake, harness write/run, segments, iterate brief, attested critic, token metering, pause/mode/resume/cancel, runs/export, RPC headless, print-mode refusal, one `session_stop` continuation. Not observed live: branch switching, compaction, `reset-ledger` on a real corrupted session, `--max-cost` exhaustion, `--allow-exec`.
 2. **Live evaluation:** small benchmarks only; effect/MAD never reached three runs in a live segment.
-3. **Remote changes:** repository creation, push, npm publication and GitHub Actions execution did not occur. The supplied publish helper performs remote writes only when the user runs it in an authenticated local environment.
+3. **Distribution:** not published to npm; installs come from GitHub tags through `omp plugin install`, which needs `bun` on `PATH`. A marketplace catalog was not created.
 4. **Security and cost isolation:** read-only policy and budgets are not an OS sandbox or a kill switch for running commands; subagent governance and metering rely on OMP running subagents in-process.
 5. **Evidence truth:** receipts record observed tool results; they do not automatically establish source authenticity, entailment, statistical significance or independent reviewer identity.
 
