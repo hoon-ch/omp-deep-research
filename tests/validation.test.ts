@@ -55,12 +55,13 @@ test("execution consent commands reject ambiguous or extra arguments", () => {
 const DIGEST = "a".repeat(64);
 const REVIEW = { assessment: "pass", summary: "Defensible", concerns: [], evidenceIds: ["E1"], evidenceDigest: DIGEST };
 test("task receipts keep each agent's own pin, reported model and structured answer", () => {
-  const resolve = (s: string) => s === "critic" ? { provider: "test", id: "critic" } : s === "helper" ? { provider: "test", id: "helper" } : undefined;
+  const resolve = (s: string) => s === "critic" || s === "@review_worker" ? { provider: "test", id: "critic" } : s === "helper" ? { provider: "test", id: "helper" } : undefined;
   const spawned = buildReceipt({ toolName: "task", toolCallId: "t1", isError: false,
-    input: { context: "c", tasks: [{ agent: "scout", model: "helper" }, { agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }] },
-    content: [{ type: "text", text: "Spawned 3 background agents" }],
-    details: { results: [], progress: [{ index: 1, id: "Crit" }, { index: 0, id: "Help" }, { index: 2, id: "Any" }] } }, resolve, "/repo");
-  assert.deepEqual(spawned.agents, [{ id: "Crit", requestedModel: "test/critic" }, { id: "Help", requestedModel: "test/helper" }, { id: "Any" }]);
+    input: { context: "c", tasks: [{ agent: "scout", model: "helper" }, { agent: "scout", model: "critic" }, { agent: "scout", model: ["critic", "other"] }, { agent: "deep-research-critic" }, { agent: "x" }] },
+    content: [{ type: "text", text: "Spawned 5 background agents" }],
+    details: { results: [], progress: [{ index: 1, id: "Crit" }, { index: 0, id: "Help" }, { index: 2, id: "Any" }, { index: 3, id: "Role", modelRole: "review_worker" }, { index: 4, id: "NoRole", modelRole: "missing" }] } }, resolve, "/repo");
+  // OMP 18.8.2+ has no item model; the agent definition's role names it and is resolved when the receipt is recorded.
+  assert.deepEqual(spawned.agents, [{ id: "Crit", requestedModel: "test/critic" }, { id: "Help", requestedModel: "test/helper" }, { id: "Any" }, { id: "Role", roleModel: "test/critic" }, { id: "NoRole" }]);
   const blocking = buildReceipt({ toolName: "task", toolCallId: "t2", isError: false, input: { agent: "scout" }, content: [{ type: "text", text: "done" }],
     details: { results: [{ index: 0, id: "Rev", resolvedModel: "test/critic:high", structuredOutput: REVIEW },
       { index: 1, id: "Fb", resolvedModel: "test/other", resolvedModelIsFallback: true, output: `\`\`\`json\n${JSON.stringify(REVIEW)}\n\`\`\`` }] } }, resolve, "/repo");
@@ -192,7 +193,11 @@ test("data mode blocks parent web acquisition", () => {
 test("only explicit native scouts without custom tools can be delegated", () => {
   const l = new Ledger(); const m = l.start();
   assert.equal(blockedReason(m, "task", { tasks: [{ agent: "scout", task: "Inspect sources" }] }, CWD), undefined);
-  for (const p of [{ task: "Code" }, { agent: "build" }, { agent: "scout", tools: [] }, { tasks: [{ agent: "scout" }, { agent: "build" }] }]) assert.ok(blockedReason(m, "task", p, CWD));
+  for (const p of [{ task: "Code" }, { agent: "build" }, { agent: "scout", tools: [] }, { tasks: [{ agent: "scout" }, { agent: "build" }] }, { tasks: [{ agent: "deep-research-critic" }] }]) assert.ok(blockedReason(m, "task", p, CWD));
+  // The read-only critic agent exists only for missions the user started with --critic.
+  const critic = new Ledger().start({ criticModel: "test/critic" });
+  assert.equal(blockedReason(critic, "task", { tasks: [{ agent: "deep-research-critic", task: "Review" }] }, CWD), undefined);
+  for (const p of [{ tasks: [{ agent: "deep-research-critic", tools: ["x"] }] }, { tasks: [{ agent: "reviewer" }] }]) assert.ok(blockedReason(critic, "task", p, CWD));
 });
 test("paused missions release the parent tool policy", () => {
   const l = new Ledger(); const m = l.start(); m.phase = "paused"; assert.equal(blockedReason(m, "write", {}, CWD), undefined);

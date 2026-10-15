@@ -217,6 +217,9 @@ function taskAgents(input: Record<string, unknown>, d: Record<string, unknown>, 
     const item = items[typeof row.index === "number" ? row.index : items.length === 1 ? 0 : -1];
     const requested = pinnedModel(item, resolve);
     if (requested) agent.requestedModel = requested;
+    // OMP 18.8.2+ has no per-item model: a role-backed agent definition (`model: "@review_worker"`) selects it.
+    const role = typeof row.modelRole === "string" && row.modelRole ? resolve(`@${row.modelRole}`) : undefined;
+    if (role) agent.roleModel = `${role.provider}/${role.id}`;
     if (isRecord(item)) Object.assign(agent, criticAssignment([input.context, ...Object.values(item)]));
     if (typeof row.resolvedModel === "string") {
       if (row.resolvedModelIsFallback) agent.fallback = true;

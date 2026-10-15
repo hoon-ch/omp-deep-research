@@ -27,6 +27,7 @@
   "files": [
     "index.ts",
     "src/",
+    "agents/",
     "skills/",
     "README.md",
     "LICENSE",

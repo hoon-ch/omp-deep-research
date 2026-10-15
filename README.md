@@ -62,7 +62,7 @@ OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시�
 작성해 둔 명세(spec) 파일로 질문 없이 바로 시작할 수도 있습니다. 모드 선언은 필수이며, Gajae의 `autoresearch-*` 키도 그대로 읽습니다.
 
 ```text
-/deep-research --spec plan.md --harness --critic anthropic/claude-sonnet-5-5
+/deep-research --spec plan.md --harness --critic @review_worker
 ```
 
 ```markdown
@@ -136,7 +136,7 @@ deep-research-metric-direction: lower
 | `--max-children 0..32` | 패스당 생성할 수 있는 서브에이전트(scout) 수. `task` 항목 하나가 1. 기본 8 |
 | `--max-minutes 1..240` | 패스의 경과 시간 제한. 기본 20분 |
 | `--max-tokens N`, `--max-cost USD` | 패스당 모델 사용량(토큰, 제공자 보고 비용) 한도. 메인 세션과 scout 사용량 합계 |
-| `--critic provider/model` | 사용 가능한 별도 평가 모델 지정. 임의 대체하지 않음 |
+| `--critic @review_worker` | critic 모델 role 또는 `provider/model`. 플러그인의 `deep-research-critic` 에이전트가 그 모델로 검토. 임의 대체하지 않음 |
 | `--constraint "..."` | 제약 추가. 반복 지정 가능 |
 | `--deliverable "..."` | 산출물 요구 추가. 반복 지정 가능 |
 
@@ -214,13 +214,15 @@ ASI cache=cold
 
 다음 실험은 `deep_research(op:"read", view:"iterate")`의 플래너 브리프(Gajae `auto-iterate.md` 기반 지시문 + 현재 세그먼트 스냅샷 + 응답 스키마)로 계획합니다. 에이전트가 직접 따르거나 `scout`에 맡길 수 있습니다.
 
-기본 조사 모델은 OMP의 현재 모델입니다. `--critic`을 지정하면 모델 선택자를 OMP의 공개 모델 조회 API로 해석합니다. 메인 모델과 같은 모델이거나 사용 불가능한 선택자는 미션 시작 전에 거부합니다. 메인 에이전트는 `deep_research(op:"read", view:"critic")`의 critic 브리프(Gajae `auto-critic.md` 기반 지시문 + 전체 근거·실험 스냅샷 + 다이제스트 + 응답 스키마)를, 그 모델 하나로 고정한 읽기 전용 `scout` 작업 항목에 `outputSchema`와 함께 전달합니다. 사용자 환경에 `scout`이나 해당 모델이 없다면 임의 코딩 에이전트/모델로 대체하지 않습니다.
+기본 조사 모델은 OMP의 현재 모델입니다. critic은 `--critic`으로만 켜며, 값으로 OMP 모델 role이나 `provider/model`을 받습니다. 권장 값은 `--critic @review_worker`입니다. 선택자는 미션 시작 때 OMP의 모델 조회 API로 실제 모델로 해석하고, 메인 모델과 같거나 해석할 수 없으면 미션 시작 전에 거부합니다.
 
-critic은 `--critic`으로만 켭니다. 지정하지 않은 미션에서는 에이전트가 critic 브리프를 읽거나 critic을 실행하지 않으며, 결론의 한계나 답변에 "critic 미실시"를 적지 않습니다.
+critic은 플러그인에 포함된 읽기 전용 에이전트 `deep-research-critic`(`agents/deep-research-critic.md`, 도구는 `read`만)이 맡습니다. 이 에이전트는 정의 파일의 `model: "@review_worker"`에 따라 `modelRoles.review_worker` 모델로 실행됩니다. OMP 18.8.2부터 `task` 작업 항목에서 모델을 직접 지정할 수 없으므로 이 role이 critic 모델을 정합니다. `--critic`은 이 role이 해석되는 모델과 같아야 합니다. 다른 role을 쓰려면 `task.agentModelOverrides`의 `deep-research-critic` 항목에 `"@<role>"` 형태로 지정하고 `--critic`도 같은 role로 맞추세요. 구체적인 모델 문자열로 덮어쓰면 호스트가 role을 보고하지 않아 critic을 검증할 수 없습니다. 메인 에이전트는 `deep_research(op:"read", view:"critic")`의 critic 브리프(Gajae `auto-critic.md` 기반 지시문 + 전체 근거·실험 스냅샷 + 다이제스트 + 응답 스키마)를 그 에이전트에 그대로 전달하며, 다른 에이전트나 모델로 대체하지 않습니다. `deep-research-critic`은 `--critic` 미션에서만 호출할 수 있습니다.
+
+`--critic`을 지정하지 않은 미션에서는 에이전트가 critic 브리프를 읽거나 critic을 실행하지 않으며, 결론의 한계나 답변에 "critic 미실시"를 적지 않습니다.
 
 Critic은 현재의 **전체 근거·실험 스냅샷**을 검토해야 합니다. 브리프 스냅샷에는 `evidenceDigest`가 들어 있고 critic은 응답에 이 값을 그대로 적습니다. `op:"critic"`은 판정·요약·우려사항·근거 ID·다이제스트를 메인 모델의 입력이 아니라 critic 응답에서 가져오며, 응답의 다이제스트가 현재 스냅샷과 다르면 거부합니다. 따라서 근거·실험·세그먼트가 바뀐 뒤 과거 응답을 다시 등록할 수 없고 새 critic을 실행해야 합니다.
 
-`--critic` 지정 여부와 관계없이 모든 critic 기록은 그 critic을 만든 `task` 호출 영수증(`spawnReceiptId`, 필수)과, 그 호출이 만든 에이전트의 `agent://<id>`를 읽은 응답 영수증(또는 critic 응답이 하나뿐인 동기 `task` 결과)에 연결되어야 합니다. `task` 영수증은 에이전트마다 ID, 해당 작업 항목의 단일 모델 고정값, 호스트가 보고한 실행 모델(대체 모델 여부 포함), 그 에이전트의 작업 입력에 들어 있던 스냅샷 해시와 critic 지시문 포함 여부를 하나의 레코드로 묶습니다. 응답을 만든 바로 그 에이전트가 `evaluator` 모델로 실행되었어야 하므로, `--critic`이 없어도 critic 작업 항목에는 메인 모델과 다른 모델 하나를 고정해야 합니다. 또 그 에이전트의 작업 입력에 현재 스냅샷(키 순서·공백 무관, `notes` 제외)과 critic 지시문 전체(공백 무관)가 그대로 들어 있어야 합니다. 다이제스트만 맞추고 요약·수정·과거 스냅샷을 넘기거나 지시문을 줄이거나 고친 경우, 같은 batch의 다른 에이전트 응답은 거부합니다. 다만 지시문과 스냅샷 주변에 덧붙인 지시는 감지하지 못합니다. 호스트가 관측한 입력과 결과로 확인하는 방식이며, 제공자가 실제로 어떤 모델을 썼는지에 대한 암호학적 증명은 아닙니다. 지정된 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만, 한계를 밝힌 `inconclusive`는 허용합니다.
+`--critic` 지정 여부와 관계없이 모든 critic 기록은 그 critic을 만든 `task` 호출 영수증(`spawnReceiptId`, 필수)과, 그 호출이 만든 에이전트의 `agent://<id>`를 읽은 응답 영수증(또는 critic 응답이 하나뿐인 동기 `task` 결과)에 연결되어야 합니다. `task` 영수증은 에이전트마다 ID, 호스트가 보고한 모델 role을 해석한 모델(`roleModel`), 이전 OMP의 작업 항목 단일 모델 고정값, 호스트가 보고한 실행 모델(대체 모델 여부 포함), 그 에이전트의 작업 입력에 들어 있던 스냅샷 해시와 critic 지시문 포함 여부를 하나의 레코드로 묶습니다. 응답을 만든 바로 그 에이전트가 `evaluator` 모델로 실행되었어야 합니다(보고된 실행 모델이 있으면 그것, 없으면 고정값 또는 role 모델). 또 그 에이전트의 작업 입력에 현재 스냅샷(키 순서·공백 무관, `notes` 제외)과 critic 지시문 전체(공백 무관)가 그대로 들어 있어야 합니다. 다이제스트만 맞추고 요약·수정·과거 스냅샷을 넘기거나 지시문을 줄이거나 고친 경우, 같은 batch의 다른 에이전트 응답은 거부합니다. 다만 지시문과 스냅샷 주변에 덧붙인 지시는 감지하지 못합니다. 비동기 critic은 생성 시점에 보고된 role로 확인하므로, 실행 중 OMP의 재시도 대체 모델로 바뀐 경우는 감지하지 못합니다. 호스트가 관측한 입력과 결과로 확인하는 방식이며, 제공자가 실제로 어떤 모델을 썼는지에 대한 암호학적 증명은 아닙니다. 지정된 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만, 한계를 밝힌 `inconclusive`는 허용합니다.
 
 ## 6. 상태와 파일
 

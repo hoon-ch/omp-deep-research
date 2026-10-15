@@ -96,6 +96,8 @@ export interface TaskAgent {
   requestedModel?: string;
   /** Host-reported `provider/id` the agent ran (blocking results). */
   resolvedModel?: string;
+  /** `provider/id` of the model role (`modelRole`, e.g. `review_worker`) the host reported for the agent's definition, resolved when recorded. */
+  roleModel?: string;
   /** The host reported a fallback model: nothing proves which requested model ran. */
   fallback?: true;
   /** Hashes (`snapshotHash`) of the critic snapshots its own assignment carried. */

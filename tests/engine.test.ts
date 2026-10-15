@@ -307,6 +307,16 @@ test("configured critic must be host-attested and answer for the current complet
   l.op({ op: "critic", critic: { ...critic, receiptId: fresh.id, spawnReceiptId: handed().id } });
   l.op({ op: "verdict", verdict: VERDICT }); assert.equal(l.state().mission!.phase, "completed");
 });
+test("a role-backed critic agent is attested by its role model unless the host reports what actually ran", () => {
+  const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
+  const spawn = (agent: Record<string, unknown>) => l.receipt({ tool: "task", agents: [{ id: "Crit", briefs: [snapshotHash(l.snapshot())], instructed: true, ...agent }] });
+  const record = (s: { id: string }) => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: l.receipt({ tool: "read", opened: ["agent://Crit"], review: l.review() }).id, spawnReceiptId: s.id } });
+  assert.throws(() => record(spawn({ roleModel: "test/other" })), /Crit ran test\/other, not test\/critic; run the critic as agent "deep-research-critic"/);
+  assert.throws(() => record(spawn({ roleModel: "test/critic", resolvedModel: "test/other" })), /ran test\/other/);
+  assert.throws(() => record(spawn({ roleModel: "test/critic", fallback: true })), /fallback/);
+  record(spawn({ roleModel: "test/critic" }));
+  assert.equal(l.state().mission!.critics.length, 1);
+});
 test("a past critic answer cannot be re-recorded as a review of a newer snapshot", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence();
   const spawn = l.criticSpawn();

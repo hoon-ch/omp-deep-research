@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
+import { CRITIC_AGENT, CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
 import { EXECUTION_TOOLS, LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
@@ -439,15 +439,15 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const ids = m.evidence.map(e => e.id);
       if (review.evidenceIds.length !== ids.length || !ids.every(id => review.evidenceIds.includes(id))) throw new ResearchError("The critic must review the complete current evidence set");
       // Every critic is attested, configured or not: a self-declared evaluator would otherwise appear in verdicts and reports.
-      if (p.spawnReceiptId === undefined) throw new ResearchError("spawnReceiptId is required: run the critic as a scout task item pinned to one model, then cite that task call");
+      if (p.spawnReceiptId === undefined) throw new ResearchError(`spawnReceiptId is required: run the critic as a task item with agent "${CRITIC_AGENT}", then cite that task call`);
       const spawn = receipt(m, p.spawnReceiptId, "spawnReceiptId");
       if (spawn.tool !== "task" || spawn.isError) throw new ResearchError("spawnReceiptId must reference the successful task call that ran the critic");
       // Attestation ties the model to the agent that produced this response, not to any agent of the same batch.
       const agent = r.id === spawn.id ? (answered.length === 1 ? answered[0] : undefined)
         : r.tool === "read" ? spawn.agents?.find(a => r.opened?.some(ref => ref === `agent://${a.id}` || ref.startsWith(`agent://${a.id}/`) || ref.startsWith(`agent://${a.id}:`))) : undefined;
       if (!agent) throw new ResearchError("The critic response must be a read of agent://<id> for an agent that task spawned, or a blocking task result with exactly one structured critic answer");
-      const ran = agent.fallback ? "a host fallback model" : agent.resolvedModel ?? agent.requestedModel ?? "an unpinned model";
-      if (ran !== reviewer) throw new ResearchError(`Agent ${agent.id} ran ${ran}, not ${reviewer}; pin exactly that model on the critic's task item`);
+      const ran = agent.fallback ? "a host fallback model" : agent.resolvedModel ?? agent.requestedModel ?? agent.roleModel ?? "an unpinned model";
+      if (ran !== reviewer) throw new ResearchError(`Agent ${agent.id} ran ${ran}, not ${reviewer}; run the critic as agent "${CRITIC_AGENT}" with its model role resolving to exactly that model`);
       // The echoed digest alone could sit beside an edited or stale snapshot body; the handed material itself must match.
       if (!agent.briefs?.includes(snapshotHash(criticSnapshot(m))))
         throw new ResearchError(`Agent ${agent.id}'s task did not carry the current view:"critic" snapshot unchanged; pass the snapshot JSON verbatim (only notes may differ) and spawn a new critic`);

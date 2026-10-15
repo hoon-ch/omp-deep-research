@@ -103,7 +103,7 @@ export const HELP = `Deep Research (Gajae-inspired, not OMP's native /autoresear
 Options: --budget 0..8 (default 6); --max-tools 1..1000 (default 60);
 --max-children 0..32 subagents per pass (default 8);
 --max-minutes 1..240 (default 20); --max-tokens N; --max-cost USD (both include subagents);
---critic provider/model; --metric <name> --direction lower|higher;
+--critic @review_worker (model role or provider/model); --metric <name> --direction lower|higher;
 --constraint "..."; --deliverable "...".
 Execution is OFF by default. --harness (data/mixed) allows writing only
 ./autoresearch.sh and running exactly \`bash autoresearch.sh\`; the harness
