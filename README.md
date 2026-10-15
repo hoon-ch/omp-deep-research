@@ -133,7 +133,7 @@ deep-research-metric-direction: lower
 | `--metric <name> --direction lower\|higher` | 주요 지표 선언. 첫 실행부터 강제 |
 | `--budget 0..8` | 패스당 추가 자동 이어가기 요청 수. 기본 6 |
 | `--max-tools 1..1000` | 패스당 부모 세션의 자료 수집 도구 호출 한도. 기본 60 |
-| `--max-children 0..32` | 패스당 생성할 수 있는 서브에이전트(scout) 수. `task` 항목 하나가 1. 기본 8 |
+| `--max-children 0..32` | 패스당 생성할 수 있는 서브에이전트 수. scout와 구성된 critic 모두 `task` 항목 하나가 1. 기본 8 |
 | `--max-minutes 1..240` | 패스의 경과 시간 제한. 기본 20분 |
 | `--max-tokens N`, `--max-cost USD` | 패스당 모델 사용량(토큰, 제공자 보고 비용) 한도. 메인 세션과 scout 사용량 합계 |
 | `--critic @review_worker` | critic 모델 role 또는 `provider/model`. 플러그인의 `deep-research-critic` 에이전트가 그 모델로 검토. 임의 대체하지 않음 |
@@ -146,9 +146,15 @@ deep-research-metric-direction: lower
 
 `resume`은 사용자의 명시적인 새 실행 요청입니다. 기존 패스의 자동 무한 연장이나 OMP 종료 후 백그라운드 실행이 아닙니다.
 
-### 역할 분담: 싼 모델로 탐색, 좋은 모델로 판단
+### 역할 분담: 출처 탐색 필요에 따라 scout 배정
 
-조사 대상이 서로 독립된 하위 질문 두 개 이상으로 나뉘면, 메인 에이전트는 `deep_research(op:"read", view:"explore")` 브리프를 받아 하위 질문마다 `scout`를 하나씩 한 번의 `task` 호출로 병렬 생성합니다. 이 항목들에는 `model`을 지정하지 않으므로 OMP의 scout 기본 역할(`@smol`, 사용자 설정 `task.agentModelOverrides.scout`)이 적용됩니다. scout는 출처 위치·발췌·지지/반박 여부를 담은 **단서**만 돌려주고, 메인 에이전트(기본 모델)가 유망한 원문을 직접 `read`해서 근거로 기록합니다. 즉 검색·훑어보기는 싼 모델이, 출처 판단·근거·결론은 좋은 모델이 맡습니다.
+메인 에이전트는 하위 질문 개수만으로 scout를 생성하지 않습니다. 알려진 권위 출처나 저렴한 로컬 조회로 답할 수 있으면 직접 확인하고, 같은 출처를 조사하는 질문은 묶습니다. 상당한 불확실성이 있는 탐색에는 scout 하나를, 실질적으로 독립적인 탐색 작업에는 여러 scout를 고려합니다. 필요하면 집중 조사로 시작한 뒤 남은 근거 공백에 따라 확대합니다.
+
+판단 기준은 정보 획득 기대와 **전체 작업량**입니다. 싼 모델의 가격이나 `task` 한 번의 도구 계수뿐 아니라 자식의 문맥·검색·응답, 결과 전달, 부모의 원문 재검증을 함께 고려합니다. 남은 토큰·비용·시간·도구·자식 예산을 확인하고, 구성된 critic이 아직 검토해야 하면 자식 슬롯을 남기도록 안내합니다. 이는 모델 행동 지침이며, 최적 scout 수나 critic 슬롯 예약을 코드가 보장하는 것은 아닙니다.
+
+위임할 때는 `deep_research(op:"read", view:"explore")` 브리프를 받고 서로 다른 탐색 작업을 native `scout`에 전달합니다. `model`을 지정하지 않으므로 OMP의 scout 역할(`@smol`, 사용자 설정 `task.agentModelOverrides.scout`)이 적용됩니다. scout는 고정된 3–6개가 아니라 질문을 검증하기에 충분한 최소 출처 단서를 돌려줍니다. 메인 에이전트는 원문을 직접 읽어야 근거로 등록할 수 있습니다.
+
+[실험 보고서](docs/SCOUT_ALLOCATION.md)에 고정 스위트, native autoresearch 기록, 실제 제공자 토큰, 재현 명령과 한계를 정리했습니다. 벤치마크는 전체 체크아웃에서 실행하며 배포 플러그인의 명령이나 도구 계약을 추가하지 않습니다.
 
 미션이 활성일 때 생성된 scout는 미션에 묶입니다.
 - `data` 모드면 scout의 웹 접근도 막힙니다.

@@ -46,8 +46,7 @@ const checks: [string, () => boolean][] = [
     es.find(e => ledger(e, "evidence_added"))!.data.data.evidence.locator = "agent://ApiScout"; return es; });
     return !r.gates.noScoutEvidence && !r.pass; }],
   ["skipped research question → coverage < 1", () => { const r = mutate("E-repo", es => {
-    const drop = es.find(e => ledger(e, "evidence_added") && /packages\/cli\//.test(e.data.data.evidence.locator));
-    return es.filter(e => e !== drop); });
+    return es.filter(e => !(ledger(e, "evidence_added") && /packages\/cli\//.test(e.data.data.evidence.locator))); });
     return r.quality.coverage < 1 && !r.pass; }],
   ["wrong conclusion → answer < 1", () => { const r = mutate("B-two", es => {
     const v = verdictOf(es); v.summary = "Both default to 200 connections."; v.findings = [{ claim: "Both default to 200", evidenceIds: ["E1"] }]; v.caveats = []; return es; });
