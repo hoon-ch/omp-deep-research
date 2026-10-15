@@ -1,17 +1,31 @@
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { CASES, COMMON_FLAGS, type BenchCase } from "./cases.ts";
 import { evaluate, type MissionResult } from "./evaluate.ts";
 import { MAIN_MODEL, MAIN_THINKING, runMission } from "./rpc.ts";
 
-/** Frozen suite configuration (segment 0). BENCH_CASES/BENCH_REPS exist for debugging only; experiments run the full suite. */
+/** Frozen segment 1: 10 cases × 2 repetitions, five concurrent missions, fixed models and bounded spend. */
 const REPS = Number(process.env.BENCH_REPS ?? 2);
 const CONCURRENCY = 5;
 const MISSION_TIMEOUT_MS = 16 * 60_000;
 const only = process.env.BENCH_CASES?.split(",");
 const cases = only ? CASES.filter(c => only.includes(c.id)) : CASES;
 const fullSuite = !only && REPS === 2;
+
+const frozenFiles = ["cases.ts", "evaluate.ts", "rpc.ts", "suite.ts", "omp-overlay.yml"];
+function fixtureFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? fixtureFiles(p) : [p];
+  }).sort();
+}
+const digest = createHash("sha256");
+for (const file of [...frozenFiles.map(p => resolve(import.meta.dirname, p)), ...fixtureFiles(resolve(import.meta.dirname, "fixtures"))]) {
+  digest.update(file.slice(import.meta.dirname.length)).update(readFileSync(file));
+}
+const benchmarkDigest = digest.digest("hex");
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const outDir = resolve(import.meta.dirname, "results", stamp);
@@ -26,7 +40,10 @@ async function one(c: BenchCase, rep: number): Promise<MissionResult> {
   const prompt = ["/deep-research", "--mode", c.mode, ...COMMON_FLAGS, ...c.flags, c.objective].map(quote).join(" ");
   const run = await runMission({ cwd: ws, sessionDir, prompt, timeoutMs: MISSION_TIMEOUT_MS });
   const result = evaluate(c, rep, run, sessionDir);
-  writeFileSync(join(outDir, `${c.id}-${rep}.json`), JSON.stringify({ ...result, sessionDir, stderrTail: run.stderr.slice(-4000) }, null, 2));
+  // Preserve raw provider usage and failed missions locally, not just derived metrics or transient /tmp paths.
+  const savedSessions = join(outDir, `${c.id}-${rep}-sessions`);
+  cpSync(sessionDir, savedSessions, { recursive: true });
+  writeFileSync(join(outDir, `${c.id}-${rep}.json`), JSON.stringify({ ...result, sessionDir: savedSessions, stderrTail: run.stderr.slice(-4000) }, null, 2));
   process.stderr.write(`[bench] ${c.id}#${rep} pass=${result.pass} tokens=${result.main.total + result.children.total} scouts=${result.ledger.scoutSpawns} ${Math.round(result.wallMs / 1000)}s\n`);
   return result;
 }
@@ -46,7 +63,7 @@ const caseIds = [...new Set(results.map(r => r.caseId))];
 const casesPassing = caseIds.filter(id => results.filter(r => r.caseId === id).every(r => r.pass));
 const gateViolations = results.filter(r => !Object.values(r.gates).every(Boolean)).length;
 const summary = {
-  stamp, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
+  stamp, segment: 1, benchmarkDigest, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
   metrics: {
     total_suite_tokens: sum(r => r.main.total + r.children.total),
     main_tokens: sum(r => r.main.total), child_tokens: sum(r => r.children.total),
@@ -81,5 +98,5 @@ const summary = {
 writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2));
 process.stderr.write(`[bench] results: ${outDir}\n`);
 for (const [k, v] of Object.entries(summary.metrics)) console.log(`METRIC ${k}=${v}`);
-// Hard invariants (budget, provenance, critic, accounting) fail the run; quality deltas are judged against the baseline.
-if (gateViolations > 0) { console.error(`[bench] ${gateViolations} mission(s) violated a hard gate`); process.exit(2); }
+// No candidate may trade quality, completion or accounting for fewer tokens.
+if (results.some(r => !r.pass)) { console.error("[bench] correctness or measurement gate failed; retain every failed mission in totals"); process.exitCode = 2; }

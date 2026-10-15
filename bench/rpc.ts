@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
-// The antigravity Opus quota was exhausted on 2026-10-15 and grok had no credits; this pair was reachable.
-export const MAIN_MODEL = "anthropic/claude-sonnet-5-5";
-export const MAIN_THINKING = "medium";
+// Segment 1 pins the main model that actually delegated in the preflight. A model change needs a new baseline.
+const [model, thinking] = (process.env.BENCH_MAIN ?? "openai-codex/gpt-6.1-sol:high").split(":");
+export const MAIN_MODEL = model!;
+export const MAIN_THINKING = thinking ?? "medium";
 export const OVERLAY = resolve(import.meta.dirname, "omp-overlay.yml");
 
 export interface MissionRun { settled: boolean; timedOut: boolean; exitCode: number | null; wallMs: number; sessionFile?: string; stderr: string; errors: string[] }

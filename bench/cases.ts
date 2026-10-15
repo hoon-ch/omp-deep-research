@@ -13,7 +13,7 @@ export interface BenchCase {
 }
 
 /** Budget flags shared by every case: bounded cost, but loose enough not to decide a correct mission's outcome. */
-export const COMMON_FLAGS = ["--budget", "3", "--max-tools", "30", "--max-minutes", "12"];
+export const COMMON_FLAGS = ["--budget", "3", "--max-tools", "30", "--max-minutes", "12", "--max-tokens", "3000000", "--max-cost", "5"];
 
 export const CASES: BenchCase[] = [
   { id: "A-simple", category: "A simple question, one authoritative source", mode: "web", flags: [], maxChildren: 8,

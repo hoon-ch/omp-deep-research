@@ -142,7 +142,7 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     noScoutEvidence: !evidence.some(e => /^agent:\/\//.test(e.locator)),
     criticHonored: !c.requireCritic || !completed || (critics > 0 && verdict?.criticId !== undefined),
     // Subagent usage the provider reported must reach the mission ledger.
-    accountingComplete: children.total === 0 || ledger.childTokens > 0,
+    accountingComplete: children.total === ledger.childTokens,
   };
   const verdictAt = verdictRaw ? Date.parse(String(verdictRaw.at)) : NaN;
   return {
@@ -150,7 +150,8 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     timeToVerdictMs: createdAt !== undefined && Number.isFinite(verdictAt) ? verdictAt - createdAt : run.wallMs,
     main, children, childFiles: files.length - (mainFile ? 1 : 0), webSearches: toolNames.get("web_search") ?? 0,
     ledger, evidence, ...(verdict ? { verdict } : {}), critics, quality, gates,
-    pass: completed && !quality.missingGroups.length && !quality.missingFacts.length && !quality.incorrect && Object.values(gates).every(Boolean)
-      && (!c.requireCritic || critics > 0),
+    pass: completed && run.settled && !run.timedOut && run.exitCode === 0 && !run.errors.length && !infraErrors.length
+      && main.total > 0 && !quality.missingGroups.length && !quality.missingFacts.length && !quality.incorrect
+      && Object.values(gates).every(Boolean) && (!c.requireCritic || critics > 0),
   };
 }
