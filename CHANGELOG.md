@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-15
 
 Fixes the three provenance gaps reported against v0.3.0 (`54328f5`) in issues #1–#3.
 

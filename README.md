@@ -2,7 +2,7 @@
 
 **Gajae Code의 autoresearch에서 착안한 Oh My Pi 전용 조사 확장입니다.** 웹·로컬 데이터·실험에서 근거를 모아 구조화된 결론을 남깁니다. OMP 코어를 포크하지 않으며 기존 `/autoresearch` 명령을 변경하지 않습니다.
 
-> 버전 0.3.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
+> 버전 0.4.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0/18.11.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
 
 ```text
 /deep-research [--mode …]
@@ -30,11 +30,13 @@ Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니�
 OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다. OMP는 git 플러그인을 `bun install`로 받으므로 `bun`이 `PATH`에 있어야 합니다(없으면 `Executable not found in $PATH: "bun"` 오류).
 
 ```bash
-omp plugin install github:hoon-ch/omp-deep-research#v0.3.0
+omp plugin install github:hoon-ch/omp-deep-research#v0.4.0
 omp plugin list            # omp-deep-research 확인
 ```
 
-설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.3.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
+설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.4.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
+
+0.3.0에서 업데이트할 때 `--critic`을 쓰면 `modelRoles.review_worker`를 설정하고 `--critic @review_worker`로 시작하세요. 업데이트 전에 요청했지만 아직 등록하지 않은 critic은 새 브리프로 다시 실행해야 합니다. 이미 등록된 과거 critic과 기존 근거·실험 원장은 유지됩니다. 설정과 재검토 조건은 [critic 안내](#5-실험과-critic)를 참고하세요.
 
 이 저장소를 고치면서 쓰는 개발 머신에서는 체크아웃을 그대로 연결합니다. 저장소를 수정한 뒤 `omp`만 다시 시작하면 반영됩니다.
 
