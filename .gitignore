@@ -8,3 +8,4 @@ coverage/
 .omp/
 .DS_Store
 *.tsbuildinfo
+bench/results/

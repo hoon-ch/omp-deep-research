@@ -1,0 +1,17 @@
+# Frozen OMP settings for the scout-allocation benchmark (loaded with --config).
+# Pins every model a mission can reach so runs stay comparable, and removes
+# sources of variance that are not part of the extension under test.
+modelRoles:
+  default: anthropic/claude-sonnet-5-5:medium
+  smol: alibaba-token-plan/qwen3.8-flash:medium
+  review_worker: openai-codex/gpt-6.1-sol:high
+  web: google-antigravity/gemini-3.8-flash
+task:
+  agentModelOverrides:
+    scout: "@smol"
+retry:
+  modelFallback: false
+memory:
+  backend: "off"
+advisor:
+  enabled: false
