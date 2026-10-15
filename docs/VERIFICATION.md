@@ -3,7 +3,7 @@
 **Date:** 2026-10-15 · **Package:** `omp-deep-research@0.4.0`
 
 This is a record of verification, not a production-readiness claim.
-Release verification for `v0.4.0` is recorded below. Previously, `v0.3.0` (`1cb98d7`) passed GitHub Actions for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/37666970815) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/37666967230) (Node 22 and 24), and was deployed to all three hosts.
+Published [v0.4.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.4.0) at commit `6aad5c8`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889591) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889120) (Node 22 and 24). The development Mac and `nima-mbp` report `omp-deep-research@0.4.0`; `nimarchy` could not be reached and has not been updated in this rollout.
 
 ## Executed locally
 
@@ -45,6 +45,9 @@ Release verification for `v0.4.0` is recorded below. Previously, `v0.3.0` (`1cb9
 | 0.4.0: OMP 18.11.0 live exact packet-v2 mission | `LICENSE:1-21` → E1 → actual `deep-research-critic` → C1 pass → V1 conclusive/criticId C1; collector completed. Host stored full packet hash `d9be9bca244683ebae3015716c895cb894836c523d3aa953c9dffbfff820864c`. Saved child session confirmed `openai-codex/gpt-6.1-sol`, no fallback, input 4,355/output 452. Earlier prototype smoke reached critic/verdict but had one corrected verdict error and an oversized-history collector failure; its receipts remain separate |
 | 0.4.0 release checkout: `npm run verify`, `npm pack --dry-run` | TypeScript check and **126 tests** passed; package dry run completed as `omp-deep-research-0.4.0.tgz` |
 | 0.4.0 release checkout: OMP 18.11.0 live data mission (RPC, disposable fixture) | `policy.txt:2-3` → E1 (30-day retention and deletion afterwards), fixture-scope E2 → V1 conclusive; zero scouts, no critic, no execution. Session settled, exit 0, no extension/RPC errors. Local automatic plugin loading and RPC `help`, `status` (`{"mission": null}`), `deny` (no-mission rejection) also passed without invoking an agent |
+| v0.4.0 deployment: development Mac (`nima-studio`, OMP 18.11.0) | Existing plugin link resolves to `/Users/hoon-ch/repos/omp-deep-research`; `omp plugin list --json` reports enabled version 0.4.0. Automatic-load RPC `help`, `status`, `deny` and the live data mission above passed. `omp plugin doctor` reported 0 errors and one missing package-manifest warning |
+| v0.4.0 deployment: `nima-mbp` (OMP 18.11.0) | Installed `github:hoon-ch/omp-deep-research#v0.4.0`; plugin list reports enabled version 0.4.0. The read-only `deep-research-critic` agent is present with `model: "@review_worker"`. Automatic-load RPC `help`, `status` (`{"mission": null}`), and `deny` (no-mission rejection) passed, with no agent invocation or extension/RPC errors; exit 0 |
+| v0.4.0 deployment: `nimarchy` | **Blocked, not deployed.** Tailscale reports `Online: false`; direct SSH, Tailscale ping and SSH from `nima-mbp` timed out. Bring the host online, install the v0.4.0 tag and repeat installed-host smoke before marking this host updated. Existing OMP sessions on updated hosts must be restarted |
 
 Environment: macOS arm64, Node.js **24.17.0**, TypeScript **5.8.3**, Node type definitions **25.1.0**. Earlier live runs used OMP **18.6.1**; the v0.2.1–v0.3.0 local smoke runs used **18.7.0** (Homebrew).
 Node's experimental TypeScript stripping executes the tests. Its experimental warning is expected.
