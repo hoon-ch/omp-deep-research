@@ -6,13 +6,20 @@ import { CASES, COMMON_FLAGS, type BenchCase } from "./cases.ts";
 import { evaluate, type MissionResult } from "./evaluate.ts";
 import { MAIN_MODEL, MAIN_THINKING, runMission } from "./rpc.ts";
 
-/** Frozen segment 2: independent critic and message-only ledger reconciliation; metric still includes all model calls. */
+/** Frozen segment 3: includes grounded-search provider usage; archived runs can be re-counted without token estimates. */
 const REPS = Number(process.env.BENCH_REPS ?? 2);
 const CONCURRENCY = 5;
 const MISSION_TIMEOUT_MS = 16 * 60_000;
 const only = process.env.BENCH_CASES?.split(",");
 const cases = only ? CASES.filter(c => only.includes(c.id)) : CASES;
 const fullSuite = !only && REPS === 2;
+const archive = process.env.BENCH_ARCHIVE;
+if (archive) {
+  const original = JSON.parse(readFileSync(resolve(archive, "summary.json"), "utf8")) as { mainModel: string; reps: number; fullSuite: boolean };
+  if (original.mainModel !== `${MAIN_MODEL}:${MAIN_THINKING}` || original.reps !== REPS || !original.fullSuite || !fullSuite) {
+    throw new Error("Archived baseline must use the same full suite, repetitions and main model");
+  }
+}
 
 const frozenFiles = ["cases.ts", "evaluate.ts", "rpc.ts", "suite.ts", "omp-overlay.yml"];
 function fixtureFiles(dir: string): string[] {
@@ -35,6 +42,14 @@ const root = mkdtempSync(join(tmpdir(), "drbench-"));
 function quote(s: string) { return /^[\w@./:=,+-]+$/.test(s) ? s : `"${s.replace(/(["\\])/g, "\\$1")}"`; }
 async function one(c: BenchCase, rep: number): Promise<MissionResult> {
   const dir = join(root, `${c.id}-${rep}`); const ws = join(dir, "ws"); const sessionDir = join(dir, "sessions");
+  if (archive) {
+    const prior = JSON.parse(readFileSync(resolve(archive, `${c.id}-${rep}.json`), "utf8")) as MissionResult & { sessionDir: string; exitCode?: number | null };
+    // A prior pass implies exitCode=0 by the frozen segment-2 evaluator. Failed runs remain failed if their exit code was not saved.
+    const result = evaluate(c, rep, { settled: prior.settled, timedOut: prior.timedOut, exitCode: prior.exitCode ?? (prior.pass ? 0 : null),
+      wallMs: prior.wallMs, errors: prior.errors, stderr: "" }, prior.sessionDir);
+    writeFileSync(join(outDir, `${c.id}-${rep}.json`), JSON.stringify({ ...result, sessionDir: prior.sessionDir, sourceResults: resolve(archive) }, null, 2));
+    return result;
+  }
   mkdirSync(sessionDir, { recursive: true });
   if (c.fixture) cpSync(resolve(import.meta.dirname, "fixtures", c.fixture), ws, { recursive: true }); else mkdirSync(ws);
   const prompt = ["/deep-research", "--mode", c.mode, ...COMMON_FLAGS, ...c.flags, c.objective].map(quote).join(" ");
@@ -43,7 +58,7 @@ async function one(c: BenchCase, rep: number): Promise<MissionResult> {
   // Preserve raw provider usage and failed missions locally, not just derived metrics or transient /tmp paths.
   const savedSessions = join(outDir, `${c.id}-${rep}-sessions`);
   cpSync(sessionDir, savedSessions, { recursive: true });
-  writeFileSync(join(outDir, `${c.id}-${rep}.json`), JSON.stringify({ ...result, sessionDir: savedSessions, stderrTail: run.stderr.slice(-4000) }, null, 2));
+  writeFileSync(join(outDir, `${c.id}-${rep}.json`), JSON.stringify({ ...result, exitCode: run.exitCode, sessionDir: savedSessions, stderrTail: run.stderr.slice(-4000) }, null, 2));
   process.stderr.write(`[bench] ${c.id}#${rep} pass=${result.pass} tokens=${result.main.total + result.children.total} scouts=${result.ledger.scoutSpawns} ${Math.round(result.wallMs / 1000)}s\n`);
   return result;
 }
@@ -63,7 +78,9 @@ const caseIds = [...new Set(results.map(r => r.caseId))];
 const casesPassing = caseIds.filter(id => results.filter(r => r.caseId === id).every(r => r.pass));
 const gateViolations = results.filter(r => !Object.values(r.gates).every(Boolean)).length;
 const summary = {
-  stamp, segment: 2, benchmarkDigest, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
+  stamp, segment: 3, benchmarkDigest, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
+  measurementOrigin: archive ? "recount_of_observed_provider_records" : "live_provider_records",
+  ...(archive ? { sourceResults: resolve(archive) } : {}),
   metrics: {
     total_suite_tokens: sum(r => r.main.total + r.children.total),
     main_tokens: sum(r => r.main.total), child_tokens: sum(r => r.children.total),
@@ -76,6 +93,8 @@ const summary = {
     total_research_cost_usd: Number(sum(r => r.main.cost + r.children.cost).toFixed(4)),
     median_time_to_verdict_ms: pct(times, 0.5), p95_time_to_verdict_ms: pct(times, 0.95),
     research_completion_rate: mean(r => r.quality.completed ? 1 : 0),
+    grounded_search_model_calls: sum(r => r.main.searchCalls + r.children.searchCalls),
+    positive_token_calls_with_zero_or_missing_price: sum(r => r.main.zeroPriceCalls + r.children.zeroPriceCalls),
     evidence_coverage_score: Number(mean(r => r.quality.coverage).toFixed(4)),
     answer_quality_score: Number(mean(r => r.quality.answer).toFixed(4)),
     incorrect_conclusions: sum(r => r.quality.incorrect ? 1 : 0),
