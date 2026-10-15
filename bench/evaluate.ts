@@ -72,6 +72,10 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     const es = entries(f);
     if (f === mainFile) { mainEntries = es; fileUsage(es, main, toolNames); } else fileUsage(es, children, toolNames);
   }
+  // The ledger receives message_end, not out-of-transcript model_usage entries (e.g. semantic find).
+  // Keep both in the metric, but reconcile ledger child tokens to assistant messages only.
+  const childMessages = zero();
+  for (const f of files) if (f !== mainFile) fileUsage(entries(f).filter(e => e.type !== "model_usage"), childMessages, new Map());
   const infraErrors: string[] = [];
   for (const f of files) for (const e of entries(f)) {
     if (e.type === "message" && isRec(e.message) && e.message.role === "assistant" && e.message.stopReason === "error" && INFRA.test(String(e.message.errorMessage ?? "")))
@@ -142,7 +146,7 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     noScoutEvidence: !evidence.some(e => /^agent:\/\//.test(e.locator)),
     criticHonored: !c.requireCritic || !completed || (critics > 0 && verdict?.criticId !== undefined),
     // Subagent usage the provider reported must reach the mission ledger.
-    accountingComplete: children.total === ledger.childTokens,
+    accountingComplete: childMessages.total === ledger.childTokens,
   };
   const verdictAt = verdictRaw ? Date.parse(String(verdictRaw.at)) : NaN;
   return {

@@ -6,7 +6,7 @@ import { CASES, COMMON_FLAGS, type BenchCase } from "./cases.ts";
 import { evaluate, type MissionResult } from "./evaluate.ts";
 import { MAIN_MODEL, MAIN_THINKING, runMission } from "./rpc.ts";
 
-/** Frozen segment 1: 10 cases × 2 repetitions, five concurrent missions, fixed models and bounded spend. */
+/** Frozen segment 2: independent critic and message-only ledger reconciliation; metric still includes all model calls. */
 const REPS = Number(process.env.BENCH_REPS ?? 2);
 const CONCURRENCY = 5;
 const MISSION_TIMEOUT_MS = 16 * 60_000;
@@ -63,7 +63,7 @@ const caseIds = [...new Set(results.map(r => r.caseId))];
 const casesPassing = caseIds.filter(id => results.filter(r => r.caseId === id).every(r => r.pass));
 const gateViolations = results.filter(r => !Object.values(r.gates).every(Boolean)).length;
 const summary = {
-  stamp, segment: 1, benchmarkDigest, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
+  stamp, segment: 2, benchmarkDigest, mainModel: `${MAIN_MODEL}:${MAIN_THINKING}`, reps: REPS, fullSuite, missions: results.length,
   metrics: {
     total_suite_tokens: sum(r => r.main.total + r.children.total),
     main_tokens: sum(r => r.main.total), child_tokens: sum(r => r.children.total),
