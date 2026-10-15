@@ -1,0 +1,130 @@
+{
+  "sourceCommit": "c75d736e0f6f0a8c4c3a29151d1dee9b56f51dd5",
+  "records": [
+    {
+      "case": "C07",
+      "rep": 2,
+      "verdict": {
+        "id": "V1",
+        "at": "2026-10-15T09:30:42.820Z",
+        "evaluator": "openai-codex/gpt-6.1-sol",
+        "disposition": "conclusive",
+        "confidence": "high",
+        "summary": "The Kestrel Python client's default request timeout is 30.0 seconds (request_timeout), for both Producer and Consumer, according to the supplied repository's Python-specific documentation and constructor defaults.",
+        "findings": [
+          {
+            "claim": "The Python guide identifies pip package kestrel-client and explicitly defines request_timeout in seconds with a default of 30.0.",
+            "evidenceIds": [
+              "E1"
+            ]
+          },
+          {
+            "claim": "DEFAULT_REQUEST_TIMEOUT is 30.0; both Producer and Consumer use that imported constant as their constructor default and accept explicit overrides.",
+            "evidenceIds": [
+              "E2",
+              "E3",
+              "E4"
+            ]
+          },
+          {
+            "claim": "The generic README's 10-second claim is not the applicable Python default: the same passage defers to language-specific guides, and the Python guide and both constructors agree on 30.0.",
+            "evidenceIds": [
+              "E5",
+              "E1",
+              "E2",
+              "E3",
+              "E4"
+            ]
+          },
+          {
+            "claim": "The documented server.request_timeout_ms = 120000 is a server-side setting, not the Python client default.",
+            "evidenceIds": [
+              "E6"
+            ]
+          }
+        ],
+        "caveats": [
+          "E5 is a real documentation inconsistency if its generic wording is read as covering Python; its referral to language-specific guides and the inspected Python source resolve the applicable value, not the historical cause of that wording.",
+          "The supplied Python package explicitly labels itself a fixture stub (E2). No release-specific or external distribution provenance was established; the conclusion is scoped to the supplied repository.",
+          "Execution remained disabled. This was static source verification, not a network timing or TimeoutError behavior test; experiments are unnecessary to establish the documented constructor default.",
+          "Reproduce by reading clients/python.md:3-16, src/kestrel/__init__.py:1-3, src/kestrel/producer.py:2-9 and src/kestrel/consumer.py:2-9; compare README.md:20-21 and docs/configuration.md:3-13. Evidence and receipt-backed inspection steps are saved in mission notes."
+        ],
+        "evidenceDigest": "d870382b599475fec139c9ce78b91626289c97b93fe75755f367aee328621dfc"
+      },
+      "evidence": [
+        {
+          "source": "file",
+          "locator": "clients/python.md:3-16",
+          "claim": "The supplied Python client documentation identifies kestrel-client and states that Producer and Consumer use request_timeout in seconds, defaulting to 30.0.",
+          "stance": "supports",
+          "fingerprint": "358818418d13326d3c4c380c910d3fcbba14977a327e87e291c1979fd4707e97",
+          "id": "E1",
+          "at": "2026-10-15T09:29:25.461Z",
+          "title": "Python client documentation defines a 30-second default",
+          "summary": "Install command is pip install kestrel-client. The Timeouts section explicitly states the units, default, and documented TimeoutError on no response.",
+          "receiptId": "call_ed295243e0604f9187a8fc9db41d9cf0|fc_0b4b99fd4f6e1b10016ad09ccf748c8191822f0125bc39ed7a"
+        },
+        {
+          "source": "file",
+          "locator": "src/kestrel/__init__.py:1-3",
+          "claim": "The supplied kestrel package defines DEFAULT_REQUEST_TIMEOUT = 30.0, but explicitly labels itself a fixture stub.",
+          "stance": "supports",
+          "fingerprint": "5529eea8a3d703c369a5cf0c15b5455e24b100b2c92a2485e4f6011d723bd2a9",
+          "id": "E2",
+          "at": "2026-10-15T09:29:25.462Z",
+          "title": "Package constant corroborates 30.0; source identifies itself as a fixture stub",
+          "summary": "The value agrees with the client documentation. The fixture label limits claims about a fully implemented or independently verified released client.",
+          "receiptId": "call_e09af9e4d81f437fa4cd1cdc2b5df51b|fc_0b4b99fd4f6e1b10016ad09cd177488191829624d5ac3ff55b"
+        },
+        {
+          "source": "file",
+          "locator": "src/kestrel/producer.py:2-9",
+          "claim": "Producer imports DEFAULT_REQUEST_TIMEOUT, uses it as the request_timeout constructor default, and stores an explicitly supplied request_timeout.",
+          "stance": "supports",
+          "fingerprint": "4f7677bd882fbd56e2ef2a77cbb9342f2bf1478fa376923e8cf4e320210359fa",
+          "id": "E3",
+          "at": "2026-10-15T09:29:40.606Z",
+          "title": "Producer constructor uses the shared timeout default",
+          "summary": "Producer's signature binds its default to the package constant; callers can override request_timeout per instance.",
+          "receiptId": "call_7f0d13704f56449dafeb8446aa8026aa|fc_0b4b99fd4f6e1b10016ad09cd177488191bb335d8266f04b75"
+        },
+        {
+          "source": "file",
+          "locator": "src/kestrel/consumer.py:2-9",
+          "claim": "Consumer imports DEFAULT_REQUEST_TIMEOUT, uses it as the request_timeout constructor default, and stores an explicitly supplied request_timeout.",
+          "stance": "supports",
+          "fingerprint": "eea9a95a2e8ca5a04a9b9b0ea40211d26b0cd27063e0e1f2ada79c2d3113d84c",
+          "id": "E4",
+          "at": "2026-10-15T09:29:56.517Z",
+          "title": "Consumer constructor uses the shared timeout default",
+          "summary": "Consumer agrees with Producer; callers can override request_timeout per instance.",
+          "receiptId": "call_9f290402cbca4f87b1775d99782bf292|fc_0b4b99fd4f6e1b10016ad09cd177488191926ca67b65976e75"
+        },
+        {
+          "source": "file",
+          "locator": "README.md:20-21",
+          "claim": "README says clients time out after 10 seconds by default, then directs readers to clients/ for language-specific settings.",
+          "stance": "contradicts",
+          "fingerprint": "2ac0a77238ee9fc5d81bbd0c169bb43d3d171eb2264463e6eef9f056c1bde59e",
+          "id": "E5",
+          "at": "2026-10-15T09:30:05.017Z",
+          "title": "README gives a generic 10-second client timeout but defers language settings",
+          "summary": "This generic statement conflicts with the Python-specific 30-second default if applied to Python. Resolve the Python question using the README's own language-specific referral, the explicit Python guide, and both constructors' 30.0 constant. The Go guide's 10 seconds and Java guide's 15 seconds further show defaults vary by language; no historical cause for the generic wording is established.",
+          "receiptId": "call_22dcfe3de71b43dd86c1b3363d173abe|fc_0b4b99fd4f6e1b10016ad09ceb74988191a868113b6f1c01e4"
+        },
+        {
+          "source": "file",
+          "locator": "docs/configuration.md:3-13",
+          "claim": "The configuration reference, explicitly scoped to Kestrel 2.2, lists server.request_timeout_ms = 120000 as the server-side limit, not the Python client's request_timeout.",
+          "stance": "context",
+          "fingerprint": "cecbde88533bab3b1af228bb5c1f47b6e4b2b80280a6c2905e4441ff962018f7",
+          "id": "E6",
+          "at": "2026-10-15T09:30:17.001Z",
+          "title": "Server-side timeout is a separate setting",
+          "summary": "The server's documented 120-second limit does not supply the Python default. Its version header also cannot establish the Python package's release version.",
+          "receiptId": "call_9e44bbfa6db1442aa384fc5ed2684829|fc_0b4b99fd4f6e1b10016ad09cf50bcc81919b3d580265c015cc"
+        }
+      ]
+    }
+  ]
+}

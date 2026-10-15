@@ -1,0 +1,7 @@
+# Benchmark sessions must not read or write the operator's long-term memory.
+memory:
+  backend: off
+retry:
+  modelFallback: false
+modelRoles:
+  review_worker: alibaba-token-plan/qwen3.8-flash:medium

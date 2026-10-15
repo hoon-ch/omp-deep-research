@@ -1,0 +1,52 @@
+{
+  "kind": "targeted-main-integration-smoke-not-full-suite",
+  "baseMainCommit": "acb9fc0",
+  "sourcePolicyCommit": "b290e6a",
+  "summary": {
+    "runs": 3,
+    "reps": 1,
+    "total_acquisition_calls": 27,
+    "main_acquisition_calls": 27,
+    "child_acquisition_calls": 0,
+    "duplicate_acquisition_calls": 0,
+    "tokens_per_mission": 269941,
+    "cost_per_suite": 0.3685,
+    "time_to_verdict_ms": 129323,
+    "research_completion_rate": 1,
+    "correctly_conclusive_rate": 1,
+    "correctly_inconclusive_rate": 1,
+    "accuracy": 1,
+    "premature_stop_count": 0,
+    "premature_conclusive_count": 0,
+    "premature_inconclusive_count": 0,
+    "missing_required_evidence_count": 0,
+    "unresolved_contradiction_count": 0,
+    "verified_claim_coverage": 1,
+    "source_diversity": 4,
+    "continuations": 0
+  },
+  "checks": [
+    {
+      "case": "C01",
+      "disposition": "conclusive",
+      "correct": true,
+      "criticRecorded": 0,
+      "criticCited": false
+    },
+    {
+      "case": "C09",
+      "disposition": "conclusive",
+      "correct": true,
+      "criticRecorded": 1,
+      "criticCited": true
+    },
+    {
+      "case": "C10",
+      "disposition": "inconclusive",
+      "correct": true,
+      "criticRecorded": 0,
+      "criticCited": false
+    }
+  ],
+  "criticSnapshotHash": "2c0e272458e0f2191397c829089b2d8edf9b5c6a08aa5813322b22c9401de2b6"
+}

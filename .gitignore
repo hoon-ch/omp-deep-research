@@ -9,3 +9,4 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 bench/results/
+bench/stopping/results/live/

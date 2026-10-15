@@ -1,0 +1,29 @@
+{
+  "label": "h7-critic-readiness",
+  "model": "openai-codex/gpt-6.1-sol",
+  "thinking": "high",
+  "summary": {
+    "runs": 20,
+    "reps": 2,
+    "total_acquisition_calls": 70.5,
+    "main_acquisition_calls": 70,
+    "child_acquisition_calls": 0.5,
+    "duplicate_acquisition_calls": 0,
+    "tokens_per_mission": 263045,
+    "cost_per_suite": 1.4061,
+    "time_to_verdict_ms": 122266,
+    "research_completion_rate": 1,
+    "correctly_conclusive_rate": 0.9375,
+    "correctly_inconclusive_rate": 1,
+    "accuracy": 0.95,
+    "premature_stop_count": 0.5,
+    "premature_conclusive_count": 0.5,
+    "premature_inconclusive_count": 0,
+    "missing_required_evidence_count": 0,
+    "unresolved_contradiction_count": 0,
+    "verified_claim_coverage": 0.9666666666666667,
+    "source_diversity": 3.5,
+    "continuations": 0
+  },
+  "sourceCommit": "c75d736e0f6f0a8c4c3a29151d1dee9b56f51dd5"
+}

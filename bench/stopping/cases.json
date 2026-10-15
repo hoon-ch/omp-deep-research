@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "corpus": "corpus",
+  "notes": "Frozen evaluation suite for evidence-aware stopping. Do not edit cases or scoring after the baseline; add a new version instead. Fact regexes are matched case-insensitively against the verdict summary and finding claims; a fact is verified only when a finding citing it is backed by evidence whose locator names a file from the fact's group.",
+  "cases": [
+    {
+      "id": "C01", "category": "single-authoritative-source",
+      "flags": "--mode data",
+      "objective": "What TCP port does the Kestrel broker protocol listen on by default?",
+      "expected": "conclusive",
+      "facts": [{ "name": "port", "re": "\\b7421\\b", "files": ["docs/configuration.md", "README.md", "docs/faq.md"] }]
+    },
+    {
+      "id": "C02", "category": "several-independent-sources",
+      "flags": "--mode data",
+      "objective": "In Kestrel 2.2, which component elects the cluster's controller leader, which consensus protocol does it use, and what is the default election timeout (setting name and value)?",
+      "expected": "conclusive",
+      "facts": [
+        { "name": "protocol", "re": "\\braft\\b", "files": ["docs/architecture.md", "CHANGELOG.md", "blog/2026-02-raft-controller.md"] },
+        { "name": "component", "re": "controller quorum|controllers?\\b", "files": ["docs/architecture.md", "CHANGELOG.md", "docs/configuration.md"] },
+        { "name": "timeout", "re": "\\b1,?500\\s*ms|1,?500\\b|1\\.5\\s*s", "files": ["docs/configuration.md"] }
+      ]
+    },
+    {
+      "id": "C03", "category": "conflicting-evidence-resolvable",
+      "flags": "--mode data",
+      "objective": "What is the default message retention period in Kestrel 2.2?",
+      "expected": "conclusive",
+      "contradictions": ["docs/faq.md"],
+      "facts": [{ "name": "retention", "re": "\\b72\\s*(h\\b|hours?|-hour)|3 days", "files": ["docs/configuration.md", "CHANGELOG.md"] }]
+    },
+    {
+      "id": "C04", "category": "unavailable-evidence",
+      "flags": "--mode data",
+      "objective": "Up to how many partitions per topic does Kestrel 2.x keep p99 produce latency under 50 ms? Give the measured partition count.",
+      "expected": "inconclusive",
+      "facts": []
+    },
+    {
+      "id": "C05", "category": "current-information",
+      "flags": "--mode data",
+      "objective": "In the latest Kestrel release, what is the default compression codec for newly created topics, and in which release did that default take effect?",
+      "expected": "conclusive",
+      "contradictions": ["docs/configuration.md"],
+      "facts": [
+        { "name": "codec", "re": "\\blz4\\b", "files": ["CHANGELOG.md", "docs/releases/2.3.0.md", "docs/releases/2.4.0.md"] },
+        { "name": "release", "re": "\\b2\\.3(\\.0)?\\b", "files": ["CHANGELOG.md", "docs/releases/2.3.0.md"] }
+      ]
+    },
+    {
+      "id": "C06", "category": "mandatory-sub-questions",
+      "flags": "--mode data",
+      "objective": "Answer all four for a Kestrel 2.2 operator: (1) the default broker protocol port; (2) the default maximum record size; (3) the signal that triggers a graceful broker shutdown; (4) the default segment roll size.",
+      "expected": "conclusive",
+      "facts": [
+        { "name": "port", "re": "\\b7421\\b", "files": ["docs/configuration.md", "README.md", "docs/faq.md"] },
+        { "name": "max-record", "re": "1,?048,?576|\\b1\\s*mib\\b", "files": ["docs/configuration.md"] },
+        { "name": "signal", "re": "\\bsigterm\\b", "files": ["docs/ops/runbook.md"] },
+        { "name": "segment", "re": "268,?435,?456|\\b256\\s*mib\\b", "files": ["docs/configuration.md", "CHANGELOG.md"] }
+      ]
+    },
+    {
+      "id": "C07", "category": "misleading-first-result",
+      "flags": "--mode data",
+      "objective": "What is the default request timeout of the official Kestrel Python client?",
+      "expected": "conclusive",
+      "facts": [{ "name": "python-timeout", "re": "\\b30(\\.0)?\\s*(s\\b|sec|seconds?)|30-second", "files": ["clients/python.md", "src/kestrel/__init__.py", "src/kestrel/producer.py", "src/kestrel/consumer.py"] }]
+    },
+    {
+      "id": "C08", "category": "saturated-evidence",
+      "flags": "--mode data",
+      "objective": "Under which license is Kestrel distributed?",
+      "expected": "conclusive",
+      "facts": [{ "name": "license", "re": "apache", "files": ["LICENSE", "README.md", "NOTICE", "src/kestrel/__init__.py", "src/kestrel/producer.py", "src/kestrel/consumer.py"] }]
+    },
+    {
+      "id": "C09", "category": "mandatory-critic",
+      "flags": "--mode data --critic @review_worker",
+      "objective": "In Kestrel 2.2, what are the default replication factor for new topics and the default number of in-sync replicas required to acknowledge an acks=all write?",
+      "expected": "conclusive",
+      "requiresCritic": true,
+      "facts": [
+        { "name": "factor", "re": "(factor|replicas per partition)[^.\\n]{0,60}\\b(5|five)\\b|\\b(5|five)\\b[^.\\n]{0,40}(replica|factor)", "files": ["docs/configuration.md"] },
+        { "name": "min-insync", "re": "(min[._ ]?insync|in-sync|insync)[^.\\n]{0,60}\\b(3|three)\\b|\\b(3|three)\\b[^.\\n]{0,40}(in-sync|insync|acknowledg)", "files": ["docs/configuration.md"] }
+      ]
+    },
+    {
+      "id": "C10", "category": "inconclusive-correct-unresolved-conflict",
+      "flags": "--mode data",
+      "objective": "What is the maximum number of members a single consumer group can have in the latest Kestrel release?",
+      "expected": "inconclusive",
+      "contradictions": ["docs/configuration.md", "docs/architecture.md"],
+      "facts": []
+    }
+  ]
+}

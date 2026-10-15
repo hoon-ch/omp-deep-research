@@ -1,0 +1,5 @@
+# Example broker configuration (development)
+listen_port = 7421
+retention.hours = 24
+compression.codec = "gzip"
+replication.factor = 1

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
-import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, systemPolicy, taskItemCount } from "./src/policy.ts";
+import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SUFFICIENCY_POLICY, systemPolicy, taskItemCount } from "./src/policy.ts";
 import { buildReceipt } from "./src/receipts.ts";
 import { exportReport } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
@@ -213,7 +213,7 @@ export default function deepResearch(pi: HostAPI): void {
     const last = m.pass.continuations + 1 >= m.maxContinuations;
     return { continue: true, additionalContext: last
       ? "Final Deep Research continuation for this pass: read the durable mission and save a best-effort verdict NOW. Use inconclusive with caveats when evidence is insufficient. Do not launch new searches or experiments."
-      : "Deep Research has no verdict for this active pass. Read the mission with deep_research, investigate the highest-value evidence gap within the remaining budget, then persist a structured verdict. Never fabricate sources or continue after cancellation." };
+      : `Deep Research has no verdict for this active pass. Read the durable mission with deep_research and assess sufficiency before acquiring anything else. ${SUFFICIENCY_POLICY} Persist the resulting structured verdict within the remaining budget. Never fabricate sources or continue after cancellation.` };
   });
 
   pi.registerTool({
@@ -314,7 +314,7 @@ export default function deepResearch(pi: HostAPI): void {
         // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`
-          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Split it into sub-questions; if two or more are independent, fan them out to cheap scouts via deep_research(op='read',view='explore') and one task call before searching yourself. Inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
+          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its objective, mode, constraints and remaining budgets. Identify mandatory questions and inspect relevant authoritative sources. Delegate only substantial independent unresolved gaps needing discovery, using deep_research(op='read',view='explore') and one scout task call. Assess task-dependent sufficiency before additional acquisition; inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
             "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass. " + (guidance ?? ""), { attribution: "agent" });
       } catch (error) {
         output(ctx, messageOf(error), "error");

@@ -76,11 +76,15 @@ A conclusive verdict must cite, or name in a caveat, every evidence item whose s
 
 The public `session_stop` hook returns `continue:true` with bounded model context. It never returns an indefinitely blocking stop decision. The host's advisory cap and the configured per-pass cap both apply. Repeated delivery of the same session/pass/turn stop ID is idempotent.
 
+The non-final continuation shares `SUFFICIENCY_POLICY` with the active-mission policy. It asks the researcher to assess mandatory coverage, inspected support, authority, independence, contradiction resolution, freshness, information gain and required evaluation before acquiring more. It does not infer sufficiency from evidence count, issue a verdict or suppress continuation automatically. The final continuation still prohibits new acquisition and asks for an honest best-effort verdict. No source text is interpolated into this decision context.
+
 Pending user messages take precedence. Aborted signals, terminal agent errors and explicit pause/cancel stop auto-continuation. Automatic host retries marked `willContinue` are left to the host. Existing OMP goal state is never inspected or mutated.
 
 Time, tool, subagent, token and cost budgets are checkpoints (next acquisition call, next stop), not process kill switches. Tokens and cost come from main-session `message_end` usage plus the usage of governed subagents (below). See `SECURITY.md`.
 
 ## Delegation boundary
+
+Delegation is gap-based, not the default consequence of decomposing a question. The main agent first inspects likely authoritative sources and delegates only substantial independent unresolved discovery gaps. Parent re-reading and provenance validation remain mandatory. The stopping benchmark under `bench/stopping/` separately counts acquisition calls in all child transcripts; it does not reinterpret or change the operator's parent-tool budget.
 
 Parent policy allows explicit native `scout` task requests only and rejects custom eval-defined tools. Each `task` call costs one acquisition tool call; each of its items costs one unit of `--max-children`, charged when the call starts (`tool_counted`). When the result shows fewer spawned agents than items (for example the host rejected the call's input), the difference is given back (`children_released`); a successful result without host-reported agents keeps its charge. Exploration scouts are not given a `model`, so the host's scout role (`@smol` by default) runs them, while the main session's model judges sources and writes evidence; scout leads are never evidence.
 
