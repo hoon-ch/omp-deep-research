@@ -173,6 +173,8 @@ export interface Critic extends CriticInput, CriticReview {
   at: string;
   /** Spawned agent whose response this is. */
   agentId: string;
+  /** Exact handed versioned packet, including notes. Absent on historical full-snapshot critic records. */
+  snapshotHash?: string;
 }
 export interface Finding {
   claim: string;

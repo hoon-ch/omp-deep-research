@@ -1,0 +1,713 @@
+{
+  "metric": "critic_input_tokens",
+  "direction": "lower",
+  "measurement": "Observed provider input usage including cacheRead; actual direct model invocations, not full task scaffold. Every scheduled attempt counted.",
+  "suite_hash": "3987f877af63301ffa5711d31b0d259ec9e35a21da9783524f70839dfb6bc753",
+  "fixture_lock_sha256": "8a18174a9bc5eee89f760617f7e86676488567f88f74a46d36cfa7e4baed48f1",
+  "baseline_initial": {
+    "tests_passed": 116,
+    "critic_input_tokens_proxy": 493908,
+    "critic_input_tokens_per_review_proxy": 22450,
+    "critic_tokens_size_5": 1648,
+    "critic_tokens_size_25": 5109,
+    "critic_tokens_size_100": 18124,
+    "critic_tokens_size_500": 87537,
+    "critic_tokens_runs_91": 13370,
+    "review_transport_tokens_proxy": 1130095,
+    "evidence_coverage_rate": 1,
+    "attestation_failure_count": 8,
+    "snapshot_integrity_failure_count": 6,
+    "structural_scenarios": 90,
+    "llm_expected_invocations": 22,
+    "llm_observed_invocations": 22,
+    "llm_missing_invocations": 0,
+    "llm_usage_missing_count": 0,
+    "critic_input_tokens_measured": 526028,
+    "critic_input_tokens": 526028,
+    "critic_input_tokens_per_review": 23910,
+    "critic_latency_ms": 26415,
+    "critic_pass_accuracy": 1,
+    "critic_revise_accuracy": 1,
+    "critic_false_pass_count": 0,
+    "critic_false_revise_count": 0,
+    "critic_answer_rejected_count": 4,
+    "critic_model_identity_failure_count": 0
+  },
+  "baseline_retained_replicate": {
+    "tests_passed": 116,
+    "critic_input_tokens_proxy": 493908,
+    "critic_input_tokens_per_review_proxy": 22450,
+    "critic_tokens_size_5": 1648,
+    "critic_tokens_size_25": 5109,
+    "critic_tokens_size_100": 18124,
+    "critic_tokens_size_500": 87537,
+    "critic_tokens_runs_91": 13370,
+    "review_transport_tokens_proxy": 1130095,
+    "evidence_coverage_rate": 1,
+    "attestation_failure_count": 8,
+    "snapshot_integrity_failure_count": 6,
+    "structural_scenarios": 90,
+    "llm_expected_invocations": 22,
+    "llm_observed_invocations": 22,
+    "llm_missing_invocations": 0,
+    "llm_usage_missing_count": 0,
+    "critic_input_tokens_measured": 526075,
+    "critic_input_tokens": 526075,
+    "critic_input_tokens_per_review": 23913,
+    "critic_latency_ms": 27764,
+    "critic_pass_accuracy": 1,
+    "critic_revise_accuracy": 0.8181818181818182,
+    "critic_false_pass_count": 2,
+    "critic_false_revise_count": 0,
+    "critic_answer_rejected_count": 4,
+    "critic_model_identity_failure_count": 0
+  },
+  "final": {
+    "tests_passed": 126,
+    "critic_input_tokens_proxy": 341653,
+    "critic_input_tokens_per_review_proxy": 15530,
+    "critic_tokens_size_5": 1380,
+    "critic_tokens_size_25": 3666,
+    "critic_tokens_size_100": 12259,
+    "critic_tokens_size_500": 58141,
+    "critic_tokens_runs_91": 13041,
+    "review_transport_tokens_proxy": 810141,
+    "evidence_coverage_rate": 1,
+    "attestation_failure_count": 0,
+    "snapshot_integrity_failure_count": 0,
+    "structural_scenarios": 90,
+    "llm_expected_invocations": 22,
+    "llm_observed_invocations": 22,
+    "llm_missing_invocations": 0,
+    "llm_usage_missing_count": 0,
+    "critic_input_tokens_measured": 373773,
+    "critic_input_tokens": 373773,
+    "critic_input_tokens_per_review": 16990,
+    "critic_latency_ms": 26679,
+    "critic_pass_accuracy": 1,
+    "critic_revise_accuracy": 1,
+    "critic_false_pass_count": 0,
+    "critic_false_revise_count": 0,
+    "critic_answer_rejected_count": 0,
+    "critic_model_identity_failure_count": 0
+  },
+  "reduction_percent_vs_retained_baseline": 28.95062491089674,
+  "by_workload_measured": [
+    {
+      "case": "A-small-clean-5",
+      "invocations_each": 2,
+      "before_input_tokens_per_review": 3108,
+      "after_input_tokens_per_review": 2840,
+      "reduction_percent": 8.6229
+    },
+    {
+      "case": "B-large-clean-25",
+      "invocations_each": 2,
+      "before_input_tokens_per_review": 6569,
+      "after_input_tokens_per_review": 5126,
+      "reduction_percent": 21.9668
+    },
+    {
+      "case": "B-large-clean-100",
+      "invocations_each": 2,
+      "before_input_tokens_per_review": 19584,
+      "after_input_tokens_per_review": 13719,
+      "reduction_percent": 29.9479
+    },
+    {
+      "case": "B-large-clean-500",
+      "invocations_each": 2,
+      "before_input_tokens_per_review": 88997,
+      "after_input_tokens_per_review": 59601,
+      "reduction_percent": 33.0303
+    },
+    {
+      "case": "C-long-text-25",
+      "invocations_each": 1,
+      "before_input_tokens_per_review": 11978,
+      "after_input_tokens_per_review": 10543,
+      "reduction_percent": 11.9803
+    },
+    {
+      "case": "D-experiments-120",
+      "invocations_each": 1,
+      "before_input_tokens_per_review": 14830,
+      "after_input_tokens_per_review": 14501,
+      "reduction_percent": 2.2185
+    }
+  ],
+  "proxy": {
+    "tokenizer": "tiktoken 0.14.0 o200k_base",
+    "before": 493908,
+    "after": 341653,
+    "scope": "22 assignment+agent-body calls, not API savings"
+  },
+  "independent_semantics": {
+    "method": "Independent read-only reviewer manually inspected each actual summary/concern against frozen planted errors; detection requires a correct revise assessment plus an explanation of that defect. ID mention alone is not detection.",
+    "semantic_fixture_count": 18,
+    "scheduled_invocations_per_trial": 22,
+    "planted_defects": 17,
+    "baseline_initial": {
+      "labels_correct": 22,
+      "false_pass": 0,
+      "false_revise": 0,
+      "raw_answers_preserved": false,
+      "source": "baseline-s2.log; first 18-call baseline independently audited separately"
+    },
+    "baseline_replicate": {
+      "labels_correct": 20,
+      "false_pass": 2,
+      "false_revise": 0,
+      "effective_defects_detected": 14,
+      "defects_explained_regardless_of_assessment": 17,
+      "contradiction_detection_rate": 0.75,
+      "unsupported_claim_detection_rate": 1,
+      "invalid_run_detection_rate": 0.5,
+      "missed_effective_cases": [
+        "E-contradiction-25: pass despite recognized MIT/GPL contradiction",
+        "H-invalid-runs: pass despite recognized crashed R3 and flagged R10"
+      ]
+    },
+    "final": {
+      "labels_correct": 22,
+      "false_pass": 0,
+      "false_revise": 0,
+      "effective_defects_detected": 17,
+      "contradiction_detection_rate": 1,
+      "unsupported_claim_detection_rate": 1,
+      "invalid_run_detection_rate": 1,
+      "incomplete_requirement_detection_rate": 1
+    },
+    "caveats": [
+      "Baseline replicate varies stochastically from initial baseline; no causal accuracy improvement claim.",
+      "C clean reference is limited to declared-license conclusion, not all ancillary provenance.",
+      "Final G/H include an incorrect ancillary objection to direct-result-file experiment evidence. All planted defects are nevertheless correctly explained."
+    ],
+    "security_review": "Independent read-only security reviewer found no introduced production attestation regression. Static review is not proof of provider identity or model cognition."
+  },
+  "per_review": {
+    "baseline_replicate": [
+      {
+        "case": "A-small-clean-5",
+        "attempt": 1,
+        "inputTokens": 3108,
+        "outputTokens": 296,
+        "cacheRead": 0,
+        "latencyMs": 13425,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "A-small-clean-5",
+        "attempt": 2,
+        "inputTokens": 3108,
+        "outputTokens": 314,
+        "cacheRead": 0,
+        "latencyMs": 14540,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-25",
+        "attempt": 2,
+        "inputTokens": 6569,
+        "outputTokens": 470,
+        "cacheRead": 0,
+        "latencyMs": 15750,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-25",
+        "attempt": 1,
+        "inputTokens": 6569,
+        "outputTokens": 425,
+        "cacheRead": 0,
+        "latencyMs": 16541,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-100",
+        "attempt": 2,
+        "inputTokens": 19584,
+        "outputTokens": 826,
+        "cacheRead": 0,
+        "latencyMs": 23469,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-100",
+        "attempt": 1,
+        "inputTokens": 19584,
+        "outputTokens": 848,
+        "cacheRead": 0,
+        "latencyMs": 24070,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "C-long-text-25",
+        "attempt": 1,
+        "inputTokens": 11978,
+        "outputTokens": 568,
+        "cacheRead": 0,
+        "latencyMs": 17157,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "D-experiments-20",
+        "attempt": 1,
+        "inputTokens": 6303,
+        "outputTokens": 798,
+        "cacheRead": 0,
+        "latencyMs": 26003,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-5",
+        "attempt": 1,
+        "inputTokens": 3175,
+        "outputTokens": 528,
+        "cacheRead": 0,
+        "latencyMs": 19664,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "D-experiments-120",
+        "attempt": 1,
+        "inputTokens": 14830,
+        "outputTokens": 954,
+        "cacheRead": 0,
+        "latencyMs": 26341,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-25",
+        "attempt": 1,
+        "inputTokens": 6613,
+        "outputTokens": 737,
+        "cacheRead": 0,
+        "latencyMs": 22395,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-500",
+        "attempt": 1,
+        "inputTokens": 88997,
+        "outputTokens": 2434,
+        "cacheRead": 0,
+        "latencyMs": 46381,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-100",
+        "attempt": 1,
+        "inputTokens": 19617,
+        "outputTokens": 999,
+        "cacheRead": 0,
+        "latencyMs": 26115,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-5",
+        "attempt": 1,
+        "inputTokens": 3118,
+        "outputTokens": 527,
+        "cacheRead": 0,
+        "latencyMs": 19752,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-25",
+        "attempt": 1,
+        "inputTokens": 6570,
+        "outputTokens": 573,
+        "cacheRead": 0,
+        "latencyMs": 16551,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-500",
+        "attempt": 2,
+        "inputTokens": 88997,
+        "outputTokens": 3004,
+        "cacheRead": 0,
+        "latencyMs": 70515,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-100",
+        "attempt": 1,
+        "inputTokens": 19642,
+        "outputTokens": 1036,
+        "cacheRead": 0,
+        "latencyMs": 26206,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "G-incorrect-conclusion",
+        "attempt": 1,
+        "inputTokens": 6276,
+        "outputTokens": 819,
+        "cacheRead": 0,
+        "latencyMs": 26776,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-500",
+        "attempt": 1,
+        "inputTokens": 89172,
+        "outputTokens": 2633,
+        "cacheRead": 0,
+        "latencyMs": 57725,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "H-invalid-runs",
+        "attempt": 1,
+        "inputTokens": 6634,
+        "outputTokens": 1040,
+        "cacheRead": 0,
+        "latencyMs": 30591,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "I-incomplete-25",
+        "attempt": 1,
+        "inputTokens": 6673,
+        "outputTokens": 571,
+        "cacheRead": 0,
+        "latencyMs": 17528,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-500",
+        "attempt": 1,
+        "inputTokens": 88958,
+        "outputTokens": 2630,
+        "cacheRead": 0,
+        "latencyMs": 53311,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      }
+    ],
+    "final": [
+      {
+        "case": "B-large-clean-25",
+        "attempt": 1,
+        "inputTokens": 5126,
+        "outputTokens": 486,
+        "cacheRead": 0,
+        "latencyMs": 12894,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "A-small-clean-5",
+        "attempt": 2,
+        "inputTokens": 2840,
+        "outputTokens": 267,
+        "cacheRead": 0,
+        "latencyMs": 13986,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "A-small-clean-5",
+        "attempt": 1,
+        "inputTokens": 2840,
+        "outputTokens": 330,
+        "cacheRead": 0,
+        "latencyMs": 14836,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-25",
+        "attempt": 2,
+        "inputTokens": 5126,
+        "outputTokens": 461,
+        "cacheRead": 0,
+        "latencyMs": 15377,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-100",
+        "attempt": 1,
+        "inputTokens": 13719,
+        "outputTokens": 781,
+        "cacheRead": 0,
+        "latencyMs": 21142,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-100",
+        "attempt": 2,
+        "inputTokens": 13719,
+        "outputTokens": 856,
+        "cacheRead": 0,
+        "latencyMs": 23871,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "C-long-text-25",
+        "attempt": 1,
+        "inputTokens": 10543,
+        "outputTokens": 426,
+        "cacheRead": 0,
+        "latencyMs": 13898,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "D-experiments-120",
+        "attempt": 1,
+        "inputTokens": 14501,
+        "outputTokens": 545,
+        "cacheRead": 0,
+        "latencyMs": 21199,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-5",
+        "attempt": 1,
+        "inputTokens": 2903,
+        "outputTokens": 493,
+        "cacheRead": 0,
+        "latencyMs": 18501,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-25",
+        "attempt": 1,
+        "inputTokens": 5186,
+        "outputTokens": 644,
+        "cacheRead": 0,
+        "latencyMs": 19365,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "D-experiments-20",
+        "attempt": 1,
+        "inputTokens": 5970,
+        "outputTokens": 1049,
+        "cacheRead": 0,
+        "latencyMs": 35080,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-500",
+        "attempt": 2,
+        "inputTokens": 59601,
+        "outputTokens": 2388,
+        "cacheRead": 0,
+        "latencyMs": 48058,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-5",
+        "attempt": 1,
+        "inputTokens": 2838,
+        "outputTokens": 473,
+        "cacheRead": 0,
+        "latencyMs": 14053,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "B-large-clean-500",
+        "attempt": 1,
+        "inputTokens": 59601,
+        "outputTokens": 2394,
+        "cacheRead": 0,
+        "latencyMs": 50683,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-100",
+        "attempt": 1,
+        "inputTokens": 13726,
+        "outputTokens": 1072,
+        "cacheRead": 0,
+        "latencyMs": 26234,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-25",
+        "attempt": 1,
+        "inputTokens": 5125,
+        "outputTokens": 671,
+        "cacheRead": 0,
+        "latencyMs": 19842,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-100",
+        "attempt": 1,
+        "inputTokens": 13793,
+        "outputTokens": 973,
+        "cacheRead": 0,
+        "latencyMs": 24768,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "I-incomplete-25",
+        "attempt": 1,
+        "inputTokens": 5194,
+        "outputTokens": 576,
+        "cacheRead": 0,
+        "latencyMs": 17324,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "G-incorrect-conclusion",
+        "attempt": 1,
+        "inputTokens": 5937,
+        "outputTokens": 894,
+        "cacheRead": 0,
+        "latencyMs": 26888,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "E-contradiction-500",
+        "attempt": 1,
+        "inputTokens": 59651,
+        "outputTokens": 2636,
+        "cacheRead": 0,
+        "latencyMs": 57502,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "H-invalid-runs",
+        "attempt": 1,
+        "inputTokens": 6186,
+        "outputTokens": 1186,
+        "cacheRead": 0,
+        "latencyMs": 38288,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      },
+      {
+        "case": "F-unsupported-500",
+        "attempt": 1,
+        "inputTokens": 59648,
+        "outputTokens": 2603,
+        "cacheRead": 0,
+        "latencyMs": 53147,
+        "actualModels": [
+          "openai-codex/gpt-6.1-sol"
+        ]
+      }
+    ]
+  },
+  "artifacts_sha256": {
+    "baseline-replicate-s2.jsonl": "8c42d436e242d4980fd21a57ab4ce166d84e2c1b5792bb4b2a16ebf8e63a9d4f",
+    "baseline-s2.log": "882f80e578b4672bd145e09cd9f76e0b56f03c7a812ab1c01700242068e43e57",
+    "baseline.jsonl": "3e08cd794a8295ed72641f640ef34aa28230258e43ad9ee657aee75eb59c1b7f",
+    "critic-context-live.jsonl": "31fcd51902f565d12a2bd6b0664c5bfcffb9c955f3d5a8b7201dd7d0dc1d4920",
+    "critic-native-baseline-replicate.jsonl": "6ca7e05804000f1114753f2b3864de35080ee64f2646e04886e97f4af3fe056c",
+    "critic-native-baseline-s2-activated.jsonl": "3df73abfaac766bbd473a43e73766e83cd8de8c3a80fcf76e6bad0f0053da6c7",
+    "critic-native-baseline-s2-explicit.jsonl": "9ca3a25866a91e02cb2af8e71e94a2731aceea839361db889c4af50a74551660",
+    "critic-native-baseline-s2-fresh.jsonl": "45666627630d04cd3afecfe47e54cddd9b48bec5d93ea14fe2171a0d50e50bbd",
+    "critic-native-baseline-s2-recorded.jsonl": "8779fb79add63ac9703844c914a2466a98660fa628a971e2ef3cf5220d6261bc",
+    "critic-native-baseline.jsonl": "bc6e530a2564ca1d9224236393202feff528dbae25fbe637abc977efea50499a",
+    "critic-native-final-bound.jsonl": "20ef30a4ba1fe417780637794c5549dca2de989809bfbdb820496ca2629d7dfb",
+    "critic-native-final-exact.jsonl": "9af1457a9a94249e6818e1490d6479ec956d51ddd3193987332ccd59a94fbf4d",
+    "critic-native-final-s2-activated.jsonl": "e366b25c69c38123c6a73cf83a374b3bfc7b895cc1e98ce72f838bd1d80ce1a7",
+    "critic-native-final-s2.jsonl": "edf46ae9fc419b4532c961e6e94501c1bddc0d76fb0b07edb05ed09184f6dd11",
+    "critic-native-h1-complete.jsonl": "becbf5c331e1eb784e4e33b4d26309b2488fd164aa6aba89b491f4b3fc191ce8",
+    "critic-native-h1.jsonl": "b5ca1b4c63f2b9850deb85e5b86f82fb97a49a5945111f539498c60d632b6252",
+    "critic-native-h2-complete.jsonl": "732193dc77ee9ea5a5e6f480286a5afa85e7557fce270f1fd7cb0dd581279f02",
+    "critic-native-h2.jsonl": "3895f8a3b773bd2a7cb0b7a7bfaf6ed48d80ccab22e3bad05f52db10d5cbbbf8",
+    "critic-native-h3-activated.jsonl": "0e53564fff633e479a192deb1ba88781658d4fd2633bc18a495e59b8ffa6f777",
+    "critic-native-h3.jsonl": "83ad41aadd85ffd289aa23faaadd37eaf93eb72b47ba313149ce81e27550c49f",
+    "critic-packet-live-exact.jsonl": "a3236210e2af9dcd117d6ac6f4af0956d32cfc167fdee1fa0bb9107a1a4dbe1e",
+    "final-s2.jsonl": "b7e702027048c10780eeed373e4b83feca02817a9d61ad39f74a45f5bacd4930",
+    "h1.jsonl": "78eafcd7c51493bfd4fc20ec0fc0c3b7e271ecd15bb461d1fd46dd2194bc447a",
+    "h2.jsonl": "cde25fee58c8d202960249bdee97a5d96792870815947223f16f7ab75ec42a16",
+    "h3.jsonl": "2988a18345e553457661b47aa66c790b9c49f88f708782da933c4a89f3d4feff",
+    "live-identity-usage.json": "66aee552fd2ce423474c8c92cb98591743dac99f2dc1d16be42c797dd5b6e6e8"
+  },
+  "protocol_deviations": [
+    "Native activation initially unavailable: used public setActiveTools for registered native tools; no replacement experiment implementation.",
+    "Fixture and direct baseline frozen before production edits. Native original-source baseline was subsequently run in isolated checkouts, not before first edit.",
+    "First native checks_failed rollback removed untracked baseline-s2 raw answers; full stdout retained, separate 22-call replicate preserved outside native rollback.",
+    "Final exact-packet native run replays the same 22 preserved real responses; its usage is not counted as another 22 critic calls.",
+    "Structural contract segment 3 strengthens versioned top-level notes binding; semantic references/fixture lock unchanged."
+  ]
+}

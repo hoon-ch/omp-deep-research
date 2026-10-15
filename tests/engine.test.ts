@@ -374,7 +374,8 @@ test("R3: a blocking batch result is attributed to the agent whose model actuall
 });
 test("R4: the critic must have been handed the current snapshot and the complete instructions themselves", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); l.evidence({ claim: "Inconvenient fact", stance: "contradicts" });
-  const snapshot = l.snapshot(); const evidence = l.state().mission!.evidence;
+  const snapshot = l.snapshot(); const evidence = snapshot.evidence;
+  assert.ok(Array.isArray(evidence));
   const spawn = (task: string) => hostReceipt(l, { toolName: "task", input: { tasks: [{ name: "Critic", agent: "scout", model: "test/critic", task }] },
     details: { results: [{ index: 0, id: "Critic", resolvedModel: "test/critic", structuredOutput: l.review() }] }, content: [{ type: "text", text: "done" }] });
   const record = (r: { id: string }) => l.op({ op: "critic", critic: { evaluator: "test/critic", receiptId: r.id, spawnReceiptId: r.id } });
@@ -386,9 +387,11 @@ test("R4: the critic must have been handed the current snapshot and the complete
   const softened = CRITIC_INSTRUCTIONS.replace("\"pass\" only when", "\"pass\" whenever");
   assert.throws(() => record(spawn(`${softened}\n${JSON.stringify(snapshot)}`)), /complete view:"critic" instructions/);
   l.op({ op: "notes", notes: "Notes may change after the brief" });
+  assert.throws(() => record(spawn(withSnapshot(snapshot))), /did not carry the current/);
+  const fresh = l.snapshot();
   // Reflowed whitespace, or the whole brief passed as one JSON object, still carries both verbatim.
-  record(spawn(withSnapshot(snapshot).replace(/\n/g, "\n   ")));
-  record(spawn(JSON.stringify({ instructions: CRITIC_INSTRUCTIONS, snapshot })));
+  record(spawn(withSnapshot(fresh).replace(/\n/g, "\n   ")));
+  record(spawn(JSON.stringify({ instructions: CRITIC_INSTRUCTIONS, snapshot: fresh })));
 });
 test("critic cannot claim the research model or bypass configured identity", () => {
   const l = new Ledger(); l.start({ criticModel: "test/critic" }); l.evidence(); const r = l.receipt({ review: l.review() });

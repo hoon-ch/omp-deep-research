@@ -1,0 +1,29 @@
+{
+  "command": "bash bench/critic/autoresearch.sh && node --experimental-strip-types --no-warnings bench/critic/llm.ts --label final-s2 --score",
+  "observed_at_utc": "2026-10-15T09:02:56.742462+00:00",
+  "exit_status": 0,
+  "tests_passed": 126,
+  "structural_scenarios": 90,
+  "evidence_coverage_rate": 1,
+  "attestation_failure_count": 0,
+  "snapshot_integrity_failure_count": 0,
+  "stored_actual_responses_revalidated": 22,
+  "critic_input_tokens_measured_in_preserved_trial": 373773,
+  "proxy_input_tokens_separate_stage": 341653,
+  "false_pass_count": 0,
+  "false_revise_count": 0,
+  "new_critic_api_calls_in_this_recheck": 0,
+  "source_sha256": {
+    "src/engine.ts": "6e70280f9a79deaea435e9372224238ba76062a74f339e5f1809a995b76f9b65",
+    "src/receipts.ts": "edf28131d25b5243c49e2999474d901c446603cce80a9efcbe0d97d66527cea4",
+    "src/types.ts": "d63940661aa9bab8778087f0b9cec766bae3292af115cf3263e01b77f1500c2b",
+    "src/report.ts": "be3af29e25c1e9f56c82c13be08e81b76fe12a4c6a6962b2d05c78239a6ec20f",
+    "bench/critic/fixtures.ts": "dc5b26770b3aab1652d1e510f040263821fad5b1912cd69ba8386f8a2e7b3f23",
+    "bench/critic/fixtures.lock.json": "8a18174a9bc5eee89f760617f7e86676488567f88f74a46d36cfa7e4baed48f1"
+  },
+  "live_and_export_evidence": [
+    "critic-packet-live-exact.jsonl",
+    "live-identity-usage.json",
+    "report-smoke.json"
+  ]
+}

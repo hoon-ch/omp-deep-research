@@ -1,0 +1,11 @@
+{
+  "model": "openai-codex/gpt-6.1-sol",
+  "agent": "LicenseCritic",
+  "resolvedModelIsFallback": false,
+  "criticInputTokens": 4355,
+  "criticOutputTokens": 452,
+  "criticTotalTokens": 4807,
+  "snapshotHash": "d9be9bca244683ebae3015716c895cb894836c523d3aa953c9dffbfff820864c",
+  "source": "saved LicenseCritic.jsonl model_change and assistant usage; results/critic-packet-live-exact.jsonl custom ledger",
+  "scope": "One real OMP task critic, separate from the fixed direct-model evaluation suite; not a before/after production comparison."
+}

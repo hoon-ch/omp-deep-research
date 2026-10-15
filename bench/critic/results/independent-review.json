@@ -1,0 +1,43 @@
+{
+  "method": "Independent read-only reviewer manually inspected each actual summary/concern against frozen planted errors; detection requires a correct revise assessment plus an explanation of that defect. ID mention alone is not detection.",
+  "semantic_fixture_count": 18,
+  "scheduled_invocations_per_trial": 22,
+  "planted_defects": 17,
+  "baseline_initial": {
+    "labels_correct": 22,
+    "false_pass": 0,
+    "false_revise": 0,
+    "raw_answers_preserved": false,
+    "source": "baseline-s2.log; first 18-call baseline independently audited separately"
+  },
+  "baseline_replicate": {
+    "labels_correct": 20,
+    "false_pass": 2,
+    "false_revise": 0,
+    "effective_defects_detected": 14,
+    "defects_explained_regardless_of_assessment": 17,
+    "contradiction_detection_rate": 0.75,
+    "unsupported_claim_detection_rate": 1,
+    "invalid_run_detection_rate": 0.5,
+    "missed_effective_cases": [
+      "E-contradiction-25: pass despite recognized MIT/GPL contradiction",
+      "H-invalid-runs: pass despite recognized crashed R3 and flagged R10"
+    ]
+  },
+  "final": {
+    "labels_correct": 22,
+    "false_pass": 0,
+    "false_revise": 0,
+    "effective_defects_detected": 17,
+    "contradiction_detection_rate": 1,
+    "unsupported_claim_detection_rate": 1,
+    "invalid_run_detection_rate": 1,
+    "incomplete_requirement_detection_rate": 1
+  },
+  "caveats": [
+    "Baseline replicate varies stochastically from initial baseline; no causal accuracy improvement claim.",
+    "C clean reference is limited to declared-license conclusion, not all ancillary provenance.",
+    "Final G/H include an incorrect ancillary objection to direct-result-file experiment evidence. All planted defects are nevertheless correctly explained."
+  ],
+  "security_review": "Independent read-only security reviewer found no introduced production attestation regression. Static review is not proof of provider identity or model cognition."
+}

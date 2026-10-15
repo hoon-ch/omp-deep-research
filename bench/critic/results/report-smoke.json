@@ -1,0 +1,11 @@
+{
+  "directory": "/private/var/folders/bd/dq0gbrc917g7x6vd531rxcwc0000gn/T/critic-report-smoke-KK0VBt/.omp/deep-research/3c42aac1-c9d3-4834-b35d-f75243e6ac2b-229fca18-8c5e-4c7f-bec1-7aafb5f63bac",
+  "files": [
+    "/private/var/folders/bd/dq0gbrc917g7x6vd531rxcwc0000gn/T/critic-report-smoke-KK0VBt/.omp/deep-research/3c42aac1-c9d3-4834-b35d-f75243e6ac2b-229fca18-8c5e-4c7f-bec1-7aafb5f63bac/report.md",
+    "/private/var/folders/bd/dq0gbrc917g7x6vd531rxcwc0000gn/T/critic-report-smoke-KK0VBt/.omp/deep-research/3c42aac1-c9d3-4834-b35d-f75243e6ac2b-229fca18-8c5e-4c7f-bec1-7aafb5f63bac/mission.json",
+    "/private/var/folders/bd/dq0gbrc917g7x6vd531rxcwc0000gn/T/critic-report-smoke-KK0VBt/.omp/deep-research/3c42aac1-c9d3-4834-b35d-f75243e6ac2b-229fca18-8c5e-4c7f-bec1-7aafb5f63bac/ledger.jsonl"
+  ],
+  "criticId": "C1",
+  "snapshotHash": "d9be9bca244683ebae3015716c895cb894836c523d3aa953c9dffbfff820864c",
+  "renderedHash": true
+}

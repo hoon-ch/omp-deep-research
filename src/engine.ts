@@ -293,13 +293,21 @@ function startMission(intake: Intake | undefined, raw: unknown, requestId: strin
   const data = { config, pass: newPass(config, at) };
   return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
 }
+/** Packet schema version; `serialization` separately versions the canonical hash encoding in validation.ts. */
+const CRITIC_PACKET = "deep-research.critic-packet.v2";
 /**
- * The critic brief's snapshot. The digest travels inside it, so the critic's answer names the snapshot it reviewed, and
- * its `snapshotHash` lets a task receipt show that the critic was handed exactly this material.
+ * The critic brief's snapshot: a review packet projected from the ledger. It carries every evidence item's reviewable
+ * fields, every segment and run, and the ledger's `evidenceDigest`, which binds the packet to the full evidence/run
+ * state; it omits only ledger bookkeeping the engine itself verifies (recording times and dedupe fingerprints).
+ * The critic's answer echoes the digest, and a task receipt's `snapshotHash` of this packet shows the critic was handed
+ * exactly this material.
  */
-function criticSnapshot(m: Mission) {
-  return { evidenceDigest: evidenceDigest(m), objective: m.objective, mode: m.mode, constraints: m.constraints, deliverables: m.deliverables,
-    evidence: m.evidence, segments: segmentReports(m), notes: m.notes };
+function criticSnapshot(m: Mission, digest = evidenceDigest(m)) {
+  return { packet: CRITIC_PACKET, serialization: "stable-json.v1", evidenceDigest: digest,
+    objective: m.objective, mode: m.mode, constraints: m.constraints, deliverables: m.deliverables,
+    evidence: m.evidence.map(({ id, source, stance, title, claim, summary, locator, receiptId }) =>
+      ({ id, source, stance, title, claim, summary, locator, receiptId } satisfies Omit<Evidence, "at" | "fingerprint">)),
+    segments: segmentReports(m), notes: m.notes };
 }
 function readView(state: ResearchState, input: Record<string, unknown>): unknown {
   const view = input.view === undefined ? "summary" : choice(input.view, ["summary", "full", "receipts", "runs", "explore", "critic", "iterate"], "view");
@@ -435,9 +443,10 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const review = r.tool === "read" ? r.review : answered.length === 1 ? answered[0]!.review : undefined;
       if (!review) throw new ResearchError("The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:\"critic\" brief and its outputSchema");
       // The critic's own answer names the snapshot it reviewed; a past answer cannot be re-dated to the current snapshot.
-      if (review.evidenceDigest !== evidenceDigest(m)) throw new ResearchError("This critic answer reviewed a different evidence/run snapshot; spawn a new critic with the current view:\"critic\" brief");
-      const ids = m.evidence.map(e => e.id);
-      if (review.evidenceIds.length !== ids.length || !ids.every(id => review.evidenceIds.includes(id))) throw new ResearchError("The critic must review the complete current evidence set");
+      const digest = evidenceDigest(m);
+      if (review.evidenceDigest !== digest) throw new ResearchError(`This critic answer reviewed a different evidence/run snapshot; spawn a new critic with the current view:"critic" brief`);
+      if (review.evidenceIds.length !== m.evidence.length || !m.evidence.every((e, i) => review.evidenceIds[i] === e.id))
+        throw new ResearchError("The critic must review the complete current evidence set in order");
       // Every critic is attested, configured or not: a self-declared evaluator would otherwise appear in verdicts and reports.
       if (p.spawnReceiptId === undefined) throw new ResearchError(`spawnReceiptId is required: run the critic as a task item with agent "${CRITIC_AGENT}", then cite that task call`);
       const spawn = receipt(m, p.spawnReceiptId, "spawnReceiptId");
@@ -449,12 +458,13 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const ran = agent.fallback ? "a host fallback model" : agent.resolvedModel ?? agent.requestedModel ?? agent.roleModel ?? "an unpinned model";
       if (ran !== reviewer) throw new ResearchError(`Agent ${agent.id} ran ${ran}, not ${reviewer}; run the critic as agent "${CRITIC_AGENT}" with its model role resolving to exactly that model`);
       // The echoed digest alone could sit beside an edited or stale snapshot body; the handed material itself must match.
-      if (!agent.briefs?.includes(snapshotHash(criticSnapshot(m))))
-        throw new ResearchError(`Agent ${agent.id}'s task did not carry the current view:"critic" snapshot unchanged; pass the snapshot JSON verbatim (only notes may differ) and spawn a new critic`);
+      const reviewedSnapshotHash = snapshotHash(criticSnapshot(m, digest));
+      if (!agent.briefs?.includes(reviewedSnapshotHash))
+        throw new ResearchError(`Agent ${agent.id}'s task did not carry the current view:"critic" snapshot unchanged; pass the snapshot JSON verbatim and spawn a new critic`);
       // Instructions added around the brief are not detected; removed or rewritten brief instructions are.
       if (!agent.instructed)
         throw new ResearchError(`Agent ${agent.id}'s task did not carry the complete view:"critic" instructions verbatim; pass them unchanged and spawn a new critic`);
-      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id, spawnReceiptId: spawn.id, agentId: agent.id, ...review };
+      const critic: Critic = { id: `C${m.critics.length + 1}`, at, evaluator: reviewer, receiptId: r.id, spawnReceiptId: spawn.id, agentId: agent.id, snapshotHash: reviewedSnapshotHash, ...review };
       return emit("critic_recorded", { critic });
     }
     case "verdict": {
@@ -463,6 +473,8 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       if (!Array.isArray(p.findings) || p.findings.length > 100) throw new ResearchError("findings must be an array with at most 100 items");
       const findings = p.findings.map((v, i) => { const f = object(v, `finding[${i}]`); return { claim: text(f.claim, "finding.claim"), evidenceIds: references(m, f.evidenceIds, "finding.evidenceIds") }; });
       const caveats = strings(p.caveats, "caveats"); const digest = evidenceDigest(m); const critic = m.critics.at(-1);
+      const criticCurrent = critic !== undefined && critic.evidenceDigest === digest
+        && (critic.snapshotHash === undefined || critic.snapshotHash === snapshotHash(criticSnapshot(m, digest)));
       if (disposition === "conclusive") {
         if (!m.evidence.length || !findings.length) throw new ResearchError("A conclusive verdict needs recorded evidence and cited findings");
         // Contradicting evidence must be confronted: cited by a finding or named (by ID) in a caveat.
@@ -470,11 +482,11 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
         const ignored = m.evidence.filter(e => e.stance === "contradicts" && !cited.has(e.id) && !new RegExp(`\\b${e.id}\\b`).test(caveatText)).map(e => e.id);
         if (ignored.length) throw new ResearchError(`Contradicting evidence ${ignored.join(", ")} must be cited by a finding or addressed by ID in a caveat`);
         if (m.criticModel && !critic) throw new ResearchError("A configured critic receipt is required before a conclusive verdict");
-        if (critic && (critic.assessment !== "pass" || critic.evidenceDigest !== digest)) throw new ResearchError("The critic must pass the CURRENT evidence/run snapshot; re-review after changes");
+        if (critic && (critic.assessment !== "pass" || !criticCurrent)) throw new ResearchError("The critic must pass the CURRENT evidence/run/review packet; re-review after changes");
       } else if (!caveats.length) throw new ResearchError("An inconclusive verdict must explain its limitations in caveats");
       const verdict: Verdict = { id: `V${m.verdicts.length + 1}`, at, evaluator, disposition,
         confidence: choice(p.confidence, ["low", "medium", "high"], "confidence"), summary: text(p.summary, "summary"), findings, caveats,
-        evidenceDigest: digest, ...(critic && critic.evidenceDigest === digest ? { criticId: critic.id } : {}) };
+        evidenceDigest: digest, ...(critic && criticCurrent ? { criticId: critic.id } : {}) };
       return emit("verdict_issued", { verdict });
     }
   }

@@ -1,0 +1,85 @@
+METRIC tests_passed=116
+WRONG B-large-clean-100 stale_packet: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 valid: expected accept, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 reformatted_keys_whitespace: expected accept, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 notes_edited: expected accept, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 stale_digest: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 stale_packet: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 wrong_role_model: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 host_fallback_model: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 truncated_instructions: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 answer_missing_id: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 answer_altered_digest: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 modified_claim: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 omitted_item: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+WRONG B-large-clean-500 reordered_items: expected reject, got reject (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+METRIC critic_input_tokens_proxy=493908
+METRIC critic_input_tokens_per_review_proxy=22450
+METRIC critic_tokens_size_5=1648
+METRIC critic_tokens_size_25=5109
+METRIC critic_tokens_size_100=18124
+METRIC critic_tokens_size_500=87537
+METRIC critic_tokens_runs_91=13370
+METRIC review_transport_tokens_proxy=1130095
+METRIC evidence_coverage_rate=1
+METRIC attestation_failure_count=8
+METRIC snapshot_integrity_failure_count=6
+METRIC structural_scenarios=90
+A-small-clean-5 #1: ok in=3108 out=287 12238ms
+A-small-clean-5 #2: ok in=3108 out=331 14970ms
+B-large-clean-25 #2: ok in=6569 out=474 16082ms
+B-large-clean-25 #1: ok in=6569 out=503 17081ms
+B-large-clean-100 #1: ok in=19584 out=813 21433ms
+B-large-clean-100 #2: ok in=19584 out=800 22415ms
+C-long-text-25 #1: ok in=11978 out=506 15201ms
+E-contradiction-5 #1: ok in=3175 out=520 17195ms
+D-experiments-120 #1: ok in=14830 out=619 19901ms
+E-contradiction-25 #1: ok in=6613 out=693 15695ms
+D-experiments-20 #1: ok in=6303 out=997 31662ms
+F-unsupported-5 #1: ok in=3118 out=519 17571ms
+E-contradiction-100 #1: ok in=19617 out=907 25950ms
+F-unsupported-25 #1: ok in=6570 out=601 18149ms
+B-large-clean-500 #1: ok in=88997 out=2715 59089ms
+B-large-clean-500 #2: ok in=88997 out=2665 57646ms
+F-unsupported-100 #1: ok in=19642 out=1058 26868ms
+I-incomplete-25 #1: ok in=6626 out=607 18846ms
+G-incorrect-conclusion #1: ok in=6276 out=771 25437ms
+E-contradiction-500 #1: ok in=89172 out=2525 51849ms
+H-invalid-runs #1: ok in=6634 out=958 25684ms
+F-unsupported-500 #1: ok in=88958 out=2554 50170ms
+A-small-clean-5 #1: expected=pass got=pass accepted=true
+A-small-clean-5 #2: expected=pass got=pass accepted=true
+B-large-clean-25 #1: expected=pass got=pass accepted=true
+B-large-clean-25 #2: expected=pass got=pass accepted=true
+B-large-clean-100 #1: expected=pass got=pass accepted=true
+B-large-clean-100 #2: expected=pass got=pass accepted=true
+B-large-clean-500 #1: expected=pass got=pass accepted=false (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+B-large-clean-500 #2: expected=pass got=pass accepted=false (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+C-long-text-25 #1: expected=pass got=pass accepted=true
+D-experiments-20 #1: expected=pass got=pass accepted=true
+D-experiments-120 #1: expected=pass got=pass accepted=true
+E-contradiction-5 #1: expected=revise got=revise accepted=true
+E-contradiction-25 #1: expected=revise got=revise accepted=true
+E-contradiction-100 #1: expected=revise got=revise accepted=true
+E-contradiction-500 #1: expected=revise got=revise accepted=false (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+F-unsupported-5 #1: expected=revise got=revise accepted=true
+F-unsupported-25 #1: expected=revise got=revise accepted=true
+F-unsupported-100 #1: expected=revise got=revise accepted=true
+F-unsupported-500 #1: expected=revise got=revise accepted=false (The response carries no structured critic answer {assessment, summary, concerns, evidenceIds, evidenceDigest}; give the critic the view:"critic" brief and its outputSchema)
+G-incorrect-conclusion #1: expected=revise got=revise accepted=true
+H-invalid-runs #1: expected=revise got=revise accepted=true
+I-incomplete-25 #1: expected=revise got=revise accepted=true
+METRIC llm_expected_invocations=22
+METRIC llm_observed_invocations=22
+METRIC llm_missing_invocations=0
+METRIC llm_usage_missing_count=0
+METRIC critic_input_tokens_measured=526028
+METRIC critic_input_tokens=526028
+METRIC critic_input_tokens_per_review=23910
+METRIC critic_latency_ms=26415
+METRIC critic_pass_accuracy=1
+METRIC critic_revise_accuracy=1
+METRIC critic_false_pass_count=0
+METRIC critic_false_revise_count=0
+METRIC critic_answer_rejected_count=4
+METRIC critic_model_identity_failure_count=0
