@@ -133,8 +133,27 @@ test("file evidence cites only lines the receipt showed; a bare file needs the w
   file(partial, "a.ts:10-20,85"); file(partial, "a.ts#L40-L50");
   assert.throws(() => file(l.receipt({ tool: "read", files: [{ path: "/repo/b.ts" }] }), "b.ts:3"), /host did not report which lines/);
   const whole = l.receipt({ tool: "read", files: [{ path: "/repo/c.ts", lines: [[1, 9]], complete: true }] });
-  file(whole, "c.ts"); file(whole, "c.ts:2-4");
+  file(whole, "c.ts"); file(whole, "c.ts:2-4"); file(whole, "c.ts:1-9");
+  // A complete read vouches for the whole file, never for line numbers it did not show.
+  assert.throws(() => file(whole, "c.ts:999-1000"), /did not show \/repo\/c\.ts:999-1000 \(it showed only lines 1-9\)/);
+  assert.throws(() => file(whole, "c.ts:9-10"), /did not show \/repo\/c\.ts:9-10/);
   assert.throws(() => file(whole, "c.ts:9-5"), /Invalid line range/);
+  const pdf = l.receipt({ tool: "read", files: [{ path: "/repo/paper.pdf", complete: true }] });
+  file(pdf, "paper.pdf");
+  assert.throws(() => file(pdf, "paper.pdf:3"), /cite the file without a range/);
+});
+test("experiment evidence from a result file proves exactly what file evidence would", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const cite = (source: string, receipt: { id: string }, locator: string) => l.op({ op: "evidence", evidence: { source, title: "t", claim: `c ${locator}`, summary: "s", locator, receiptId: receipt.id, stance: "supports" } });
+  const read = l.receipt({ tool: "read", files: [{ path: "/repo/results/a.txt", lines: [[1, 20]] }] });
+  for (const [locator, error] of [["results/never-read.txt:999-1000", /returned no content of \/repo\/results\/never-read\.txt/], ["results/a.txt:15-25", /did not show \/repo\/results\/a\.txt:15-25/], ["results/a.txt", /did not show all of/], ["the a.txt table", /must be a local path/]] as const)
+    for (const source of ["file", "experiment"]) assert.throws(() => cite(source, read, locator), error, `${source} ${locator}`);
+  cite("file", read, "results/a.txt:3-9"); cite("experiment", read, "results/a.txt:3-9");
+  assert.throws(() => cite("experiment", l.receipt({ tool: "read", files: [{ path: "/repo/results/a.txt", lines: [[1, 20]] }], isError: true }), "results/a.txt:3"), /failed fetch\/read/);
+  // A run's own output is the experiment; its locator names the run, not a file.
+  cite("experiment", l.receipt({ tool: "bash", metrics: { ms: 4 } }), "bash autoresearch.sh (R1)");
+  cite("experiment", l.receipt({ tool: "eval" }), "eval cell: median of 5 runs");
+  assert.equal(l.state().mission!.evidence.length, 4);
 });
 test("listing evidence records existence from a glob/find listing, never with line ranges", () => {
   const l = new Ledger(); l.start({ mode: "data" });
@@ -207,24 +226,39 @@ test("strict run classification uses observed metrics rather than model-supplied
   assert.deepEqual(l.state().mission!.runs.map(r => r.outcome), ["baseline", "keep", "discard", "discard", "crash", "checks_failed"]);
   assert.equal(bestRun(l.state().mission!)!.id, "R2");
 });
+test("only an executed run's own output can be logged as a run", () => {
+  const l = new Ledger(); l.start({ mode: "mixed", metric: { name: "latency_ms", direction: "lower" } });
+  const run = (receipt: { id: string }) => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: receipt.id } });
+  run(l.receipt({ tool: "bash", metrics: { latency_ms: 100 } }));
+  // An example METRIC line inside a scout report, a task result, a result file or a web page is not a measurement.
+  const scout = l.receipt({ tool: "read", files: [], opened: ["agent://Explorer/report"], metrics: { latency_ms: 1 } });
+  const leads = [scout, l.receipt({ tool: "task", metrics: { latency_ms: 1 } }), l.receipt({ tool: "read", files: [{ path: "/repo/results/old.txt", lines: [[1, 3]], complete: true }], metrics: { latency_ms: 1 } }),
+    l.receipt({ tool: "grep", metrics: { latency_ms: 1 } }), l.receipt({ tool: "web_search", metrics: { latency_ms: 1 } })];
+  for (const r of leads) assert.throws(() => run(r), /not an executed run/, r.tool);
+  run(l.receipt({ tool: "eval", metrics: { latency_ms: 90 } })); run(l.receipt({ tool: "bash", metrics: { latency_ms: 95 } }));
+  run(l.receipt({ tool: "bash", isError: true, metrics: {} }));
+  const m = l.state().mission!;
+  assert.deepEqual(m.runs.map(r => r.outcome), ["baseline", "keep", "discard", "crash"]);
+  assert.equal(bestRun(m)!.metrics.latency_ms, 90);
+});
 test("flagging invalid runs recomputes best and later comparisons", () => {
   const l = new Ledger(); l.start({ mode: "mixed" });
   for (const value of [100, 1]) {
-    const r = l.receipt({ metrics: { score: value } });
+    const r = l.receipt({ tool: "bash", metrics: { score: value } });
     l.op({ op: "run", run: { label: "Bench", hypothesis: "Compare", receiptId: r.id, primaryMetric: "score", direction: "lower" } });
   }
   l.op({ op: "flag_run", runId: "R2", reason: "Workload was incomplete" });
   assert.equal(bestRun(l.state().mission!)!.id, "R1");
-  const r = l.receipt({ metrics: { score: 80 } });
+  const r = l.receipt({ tool: "bash", metrics: { score: 80 } });
   l.op({ op: "run", run: { label: "Bench", hypothesis: "Compare", receiptId: r.id, primaryMetric: "score", direction: "lower" } });
   assert.equal(l.state().mission!.runs.at(-1)!.outcome, "keep");
 });
 test("the metric contract is fixed within a segment and can change only in a new segment", () => {
-  const l = new Ledger(); l.start({ mode: "data" }); const r = l.receipt({ metrics: { score: 3, ms: 9 } });
+  const l = new Ledger(); l.start({ mode: "data" }); const r = l.receipt({ tool: "bash", metrics: { score: 3, ms: 9 } });
   const run = { label: "x", hypothesis: "x", receiptId: r.id, primaryMetric: "score", direction: "higher" };
-  l.op({ op: "run", run }); assert.throws(() => l.op({ op: "run", run: { ...run, receiptId: l.receipt({ metrics: { score: 1 } }).id, direction: "lower" } }), /new segment/);
+  l.op({ op: "run", run }); assert.throws(() => l.op({ op: "run", run: { ...run, receiptId: l.receipt({ tool: "bash", metrics: { score: 1 } }).id, direction: "lower" } }), /new segment/);
   l.op({ op: "segment", segment: { reason: "Switched to latency workload", metric: { name: "ms", direction: "lower" } } });
-  const r2 = l.receipt({ metrics: { ms: 9 } });
+  const r2 = l.receipt({ tool: "bash", metrics: { ms: 9 } });
   l.op({ op: "run", run: { label: "y", hypothesis: "y", receiptId: r2.id } });
   const m = l.state().mission!;
   assert.deepEqual(m.runs.map(x => [x.segment, x.primaryMetric, x.outcome]), [[0, "score", "baseline"], [1, "ms", "baseline"]]);
@@ -232,14 +266,14 @@ test("the metric contract is fixed within a segment and can change only in a new
 });
 test("a declared metric is enforced from the first run", () => {
   const l = new Ledger(); l.start({ mode: "data", metric: { name: "ms", direction: "lower" } });
-  assert.throws(() => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { score: 1 } }).id, primaryMetric: "score", direction: "higher" } }), /measures ms/);
-  l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { ms: 5 }, asi: { cache: "warm" } }).id } });
+  assert.throws(() => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ tool: "bash", metrics: { score: 1 } }).id, primaryMetric: "score", direction: "higher" } }), /measures ms/);
+  l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ tool: "bash", metrics: { ms: 5 }, asi: { cache: "warm" } }).id } });
   const run = l.state().mission!.runs[0]!;
   assert.equal(run.outcome, "baseline"); assert.deepEqual(run.asi, { cache: "warm" });
 });
 test("effect-to-noise needs three valid runs with spread and ignores flagged runs", () => {
   const l = new Ledger(); l.start({ mode: "data", metric: { name: "ms", direction: "lower" } });
-  const run = (ms: number) => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ metrics: { ms } }).id } });
+  const run = (ms: number) => l.op({ op: "run", run: { label: "x", hypothesis: "x", receiptId: l.receipt({ tool: "bash", metrics: { ms } }).id } });
   run(100); run(90); assert.equal(effectToNoise(l.state().mission!), null);
   run(80); // values 100, 90, 80: median 90, MAD 10, |80 - 100| / 10 = 2
   assert.equal(effectToNoise(l.state().mission!), 2);

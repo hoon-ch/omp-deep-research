@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Fixes the three provenance gaps reported against v0.3.0 (`54328f5`) in issues #1–#3.
+
+- **Fix (#1):** `op:"run"` accepted any receipt with `METRIC` text, so an example line in a scout report (`read agent://…`), a `task` result or a read file could become a `keep` run and move the best metric. Runs now require a `bash`/`eval` receipt (the call that ran the experiment); other receipts are rejected before classification. Existing result files are cited as experiment evidence, not imported as runs.
+- **Fix (#2):** experiment evidence backed by a `read`/`grep` receipt only checked that the receipt returned some file, so relabelling `file` evidence as `experiment` could cite files and lines it never showed. Result-file experiment evidence now goes through the same file/line coverage check as file evidence; `bash`/`eval` run receipts keep a free-form locator. A failed `read` no longer backs experiment evidence; a failed run still does.
+- **Fix (#3):** a complete read skipped the line-range check, so `a.ts:999-1000` passed for a three-line file. Ranges must lie inside the shown lines regardless of completeness; a bare file still needs a complete read, and a complete read without line data (non-text) can be cited only as a whole file.
+- **Compatibility:** runs and evidence already in a ledger are replayed unchanged; only new `run`/`evidence` calls are checked. Agents that logged runs from non-execution receipts must cite those files as experiment evidence instead.
+
 ## 0.3.0 — 2026-10-08
 
 Fixes the four provenance gaps reported in the v0.2.2 review (`d69de22`) and closes the limitations left after them: line ranges, existence-only evidence, critic attestation for every critic and the material it was handed, and a strict locator grammar.

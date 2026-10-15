@@ -10,6 +10,8 @@ const PREVIEW_CHARS = 2400;
 export const LOCAL_CONTENT_TOOLS: Record<string, true> = { read: true, grep: true, ast_grep: true };
 /** Tools whose results list local paths; with content tools, they can substantiate listing (existence) evidence. */
 export const LOCAL_LISTING_TOOLS: Record<string, true> = { glob: true, find: true };
+/** Tools whose results are an executed command's own output; only these can be logged as runs. */
+export const EXECUTION_TOOLS: Record<string, true> = { bash: true, eval: true };
 /** URLs, `www.` hosts and internal URIs (`agent://`, `local://`, `skill://`, …) are not local files. */
 const NOT_LOCAL = /^(?:[a-z][a-z0-9+.-]*:\/\/|www\.)/i;
 /** Merged 1-based spans of the line numbers a result showed: `[1,2,3,7]` → `[[1,3],[7,7]]`. */

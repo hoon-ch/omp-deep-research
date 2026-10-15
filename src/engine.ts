@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
-import { LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
+import { EXECUTION_TOOLS, LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
@@ -258,6 +258,26 @@ function references(m: Mission, value: unknown, name: string, required = true): 
   for (const id of ids) if (!m.evidence.some(e => e.id === id)) throw new ResearchError(`Unknown evidence ID: ${id}`);
   return ids;
 }
+/**
+ * What a file-backed locator may cite from a receipt: files it returned content of, ranges inside the lines it showed,
+ * and a bare file (the whole file) only after a complete read. Completeness never vouches for line numbers: a complete
+ * read still cites only lines it showed, and one without line data (non-text) cites no range.
+ */
+function assertShown(r: Receipt, locator: string, cwd: string, kind: "File" | "Experiment"): void {
+  const refs = locatorRefs(locator, cwd);
+  if (!refs.length) throw new ResearchError(`${kind} evidence locator must name the file(s) it cites, e.g. src/a.ts:10-20; docs/b.md:4`);
+  for (const ref of refs) {
+    const shown = r.files?.find(f => f.path === ref.file);
+    if (!shown) throw new ResearchError(`Receipt ${r.id} returned no content of ${ref.file}; read the cited file(s) and use that receipt`);
+    const seen = shown.lines?.length ? `it showed only lines ${shown.lines.map(s => s.join("-")).join(",")}` : "the host did not report which lines it showed";
+    if (!ref.ranges) {
+      if (shown.complete) continue;
+      throw new ResearchError(`Receipt ${r.id} did not show all of ${ref.file} (${seen}); cite the line range you read, e.g. ${ref.file}:N-M`);
+    }
+    const unseen = ref.ranges.filter(([s, e]) => !shown.lines?.some(([a, b]) => a <= s && e <= b));
+    if (unseen.length) throw new ResearchError(`Receipt ${r.id} did not show ${ref.file}:${unseen.map(s => s.join("-")).join(",")} (${seen}); ${shown.complete && !shown.lines?.length ? "it showed the whole file, so cite the file without a range" : "read those lines and cite that receipt"}`);
+  }
+}
 export interface Prepared { event?: LedgerEvent; result: unknown; }
 /** Completes a cold intake. Operator settings (budgets, execution consent, critic, declared metric) are never model-controlled. */
 function startMission(intake: Intake | undefined, raw: unknown, requestId: string, requestHash: string, at: string): Prepared {
@@ -330,7 +350,8 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const source = choice(e.source, ["web", "file", "listing", "experiment"], "evidence.source");
       if ((m.mode === "web" && source !== "web") || (m.mode === "data" && source === "web")) throw new ResearchError(`Evidence source ${source} is not allowed in ${m.mode} mode`);
       const r = receipt(m, e.receiptId);
-      if (r.isError && source !== "experiment") throw new ResearchError("A failed fetch/read is not evidence of source contents");
+      // A crashed run is an experiment result; a failed read or fetch returned no content.
+      if (r.isError && !(source === "experiment" && Object.hasOwn(EXECUTION_TOOLS, r.tool))) throw new ResearchError("A failed fetch/read is not evidence of source contents");
       const locator = source === "web" ? canonicalUrl(text(e.locator, "locator", 4000)) : text(e.locator, "locator", 4000);
       if (source === "web") {
         if (r.tool !== "read") throw new ResearchError("Open the original web source with read before recording evidence; search snippets, github results and task summaries are leads only");
@@ -341,18 +362,7 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
         // Scout reports (`read agent://…`) and task summaries are leads; file evidence needs the file itself.
         if (!Object.hasOwn(LOCAL_CONTENT_TOOLS, r.tool) || !r.files?.length)
           throw new ResearchError("File evidence needs a read of the file or a grep/ast_grep receipt that returned matches in it. Directory listings, glob/find file lists (use source \"listing\" for existence), searches without matches, scout reports (agent://…) and task summaries are leads: read the cited file yourself first");
-        const refs = locatorRefs(locator, cwd);
-        if (!refs.length) throw new ResearchError("File evidence locator must name the file(s) it cites, e.g. src/a.ts:10-20; docs/b.md:4");
-        // A range cites those lines; a bare file cites all of it. Either must have been shown by this receipt.
-        for (const ref of refs) {
-          const shown = r.files.find(f => f.path === ref.file);
-          if (!shown) throw new ResearchError(`Receipt ${r.id} returned no content of ${ref.file}; read the cited file(s) and use that receipt`);
-          if (shown.complete) continue;
-          const seen = shown.lines?.length ? `it showed only lines ${shown.lines.map(s => s.join("-")).join(",")}` : "the host did not report which lines it showed";
-          if (!ref.ranges) throw new ResearchError(`Receipt ${r.id} did not show all of ${ref.file} (${seen}); cite the line range you read, e.g. ${ref.file}:N-M`);
-          const unseen = ref.ranges.filter(([s, e]) => !shown.lines?.some(([a, b]) => a <= s && e <= b));
-          if (unseen.length) throw new ResearchError(`Receipt ${r.id} did not show ${ref.file}:${unseen.map(s => s.join("-")).join(",")} (${seen}); read those lines and cite that receipt`);
-        }
+        assertShown(r, locator, cwd, "File");
       } else if (source === "listing") {
         // A listing shows that paths exist, never what they contain; the critic sees source "listing" and judges the claim.
         const listed = [...r.listed ?? [], ...(r.files ?? []).map(f => f.path)];
@@ -362,8 +372,12 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
         // A listed path also shows that each of its parent directories exists.
         const missing = refs.filter(ref => !listed.some(p => p === ref.file || p.startsWith(`${ref.file}/`))).map(ref => ref.file);
         if (missing.length) throw new ResearchError(`Receipt ${r.id} did not list ${missing.join(", ")}`);
-      } else if (r.tool === "task" || (Object.hasOwn(LOCAL_CONTENT_TOOLS, r.tool) ? !r.files?.length : r.tool !== "bash" && r.tool !== "eval")) {
-        throw new ResearchError("Experiment evidence needs the run's own output (bash/eval) or a local result file read; scout reports and task summaries are leads");
+      } else if (!Object.hasOwn(EXECUTION_TOOLS, r.tool)) {
+        // A run's own output backs the claim directly; a result file backs only the files and lines the receipt showed,
+        // exactly as for source "file", so relabelling evidence cannot widen what a receipt proves.
+        if (!Object.hasOwn(LOCAL_CONTENT_TOOLS, r.tool) || !r.files?.length)
+          throw new ResearchError("Experiment evidence needs the run's own output (bash/eval) or a read of a local result file; scout reports (agent://…) and task summaries are leads");
+        assertShown(r, locator, cwd, "Experiment");
       }
       const claim = text(e.claim, "claim"); const stance = choice(e.stance, ["supports", "contradicts", "context"], "stance");
       const fingerprint = hash({ source, locator, claim: claim.replace(/\s+/g, " ").toLowerCase(), stance });
@@ -383,6 +397,9 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
     case "run": {
       if (m.mode === "web") throw new ResearchError("Experiment runs require data or mixed mode");
       const p = object(input.run, "run"); const r = receipt(m, p.receiptId);
+      // METRIC text in a read, a scout report, a task result or a page is not a measurement; only an executed run's output is.
+      if (!Object.hasOwn(EXECUTION_TOOLS, r.tool))
+        throw new ResearchError(`Receipt ${r.id} is a ${r.tool} result, not an executed run; log the bash/eval call that ran the experiment (e.g. bash autoresearch.sh). Cite existing result files as experiment evidence instead`);
       const contract = metricContract(m);
       const primaryMetric = p.primaryMetric === undefined && contract ? contract.name : text(p.primaryMetric, "primaryMetric", 64);
       const direction = p.direction === undefined && contract ? contract.direction : choice(p.direction, ["lower", "higher"], "direction");

@@ -15,7 +15,7 @@ test("report distinguishes incomplete research from a saved verdict", () => {
 test("untrusted text cannot inject images, links or HTML into the report", () => {
   const l = new Ledger(); l.start({ mode: "mixed" });
   l.evidence({ title: "![x](https://evil.example/?leak=1) <img src=x onerror=alert(1)>", summary: "[click](javascript:alert(1)) https://evil.example/a" });
-  l.op({ op: "run", run: { label: "<script>x</script>", hypothesis: "h", receiptId: l.receipt({ metrics: { ms: 3 }, asi: { note: "![i](http://e/x)" } }).id, primaryMetric: "ms", direction: "lower" } });
+  l.op({ op: "run", run: { label: "<script>x</script>", hypothesis: "h", receiptId: l.receipt({ tool: "bash", metrics: { ms: 3 }, asi: { note: "![i](http://e/x)" } }).id, primaryMetric: "ms", direction: "lower" } });
   const report = renderReport(l.state().mission!);
   for (const raw of ["![x](", "[click](", "https://evil", "<script>", "![i]("]) assert.ok(!report.includes(raw), raw);
   assert.doesNotMatch(report, /(?<!\\)<(img|script)/);
