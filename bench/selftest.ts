@@ -32,6 +32,13 @@ const missionId = (es: Rec[]) => es.find(e => ledger(e, "mission_created"))!.dat
 
 const checks: [string, () => boolean][] = [
   ["unmutated J-critic still passes", () => mutate("J-critic", es => es).pass],
+  ["grounded-search provider usage → counted once with reported total", () => {
+    const before = mutate("A-simple", es => es);
+    const after = mutate("A-simple", es => [...es, { type: "message", message: { role: "toolResult", toolName: "web_search",
+      details: { response: { usage: { inputTokens: 1154, outputTokens: 1182, totalTokens: 4120 } } } } }]);
+    return after.main.total - before.main.total === 4120 && after.main.calls - before.main.calls === 1
+      && after.main.input - before.main.input === 1154 && after.main.output - before.main.output === 1182;
+  }],
   ["critic bypass → criticHonored fails", () => { const r = mutate("J-critic", es => {
     const out = es.filter(e => !ledger(e, "critic_recorded")); delete verdictOf(out).criticId; return out; });
     return !r.gates.criticHonored && !r.pass; }],
@@ -39,8 +46,7 @@ const checks: [string, () => boolean][] = [
     es.find(e => ledger(e, "evidence_added"))!.data.data.evidence.locator = "agent://ApiScout"; return es; });
     return !r.gates.noScoutEvidence && !r.pass; }],
   ["skipped research question → coverage < 1", () => { const r = mutate("E-repo", es => {
-    const drop = es.find(e => ledger(e, "evidence_added") && /packages\/cli\//.test(e.data.data.evidence.locator));
-    return es.filter(e => e !== drop); });
+    return es.filter(e => !(ledger(e, "evidence_added") && /packages\/cli\//.test(e.data.data.evidence.locator))); });
     return r.quality.coverage < 1 && !r.pass; }],
   ["wrong conclusion → answer < 1", () => { const r = mutate("B-two", es => {
     const v = verdictOf(es); v.summary = "Both default to 200 connections."; v.findings = [{ claim: "Both default to 200", evidenceIds: ["E1"] }]; v.caveats = []; return es; });

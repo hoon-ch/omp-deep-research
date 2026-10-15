@@ -10,14 +10,15 @@ type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : 0;
 
-export interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; total: number; cost: number; calls: number; toolCalls: number }
-const zero = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0, calls: 0, toolCalls: 0 });
+export interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; total: number; cost: number; calls: number; toolCalls: number; zeroPriceCalls: number; searchCalls: number }
+const zero = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0, calls: 0, toolCalls: 0, zeroPriceCalls: 0, searchCalls: 0 });
 function addUsage(u: Usage, raw: unknown) {
   if (!isRec(raw)) return;
   const input = num(raw.input), output = num(raw.output), cacheRead = num(raw.cacheRead), cacheWrite = num(raw.cacheWrite);
   u.input += input; u.output += output; u.cacheRead += cacheRead; u.cacheWrite += cacheWrite;
   u.total += num(raw.totalTokens) || input + output + cacheRead + cacheWrite;
   u.cost += isRec(raw.cost) ? num(raw.cost.total) : 0;
+  if (num(raw.totalTokens) > 0 && (!isRec(raw.cost) || num(raw.cost.total) === 0)) u.zeroPriceCalls++;
 }
 
 export interface MissionResult {
@@ -53,6 +54,17 @@ function entries(file: string): Rec[] {
 function fileUsage(es: Rec[], u: Usage, toolNames: Map<string, number>) {
   for (const e of es) {
     if (e.type === "model_usage") { addUsage(u, e.usage); u.calls++; continue; }
+    if (e.type === "message" && isRec(e.message) && e.message.role === "toolResult" && e.message.toolName === "web_search") {
+      const details = e.message.details;
+      const response = isRec(details) && isRec(details.response) ? details.response : undefined;
+      const usage = response && isRec(response.usage) ? response.usage : undefined;
+      if (usage) {
+        // OMP 18.11 stores grounded-search provider usage here, with no matching model_usage entry.
+        addUsage(u, { input: usage.inputTokens, output: usage.outputTokens, totalTokens: usage.totalTokens, cost: usage.cost });
+        u.calls++; u.searchCalls++;
+      }
+      continue;
+    }
     if (e.type !== "message" || !isRec(e.message) || e.message.role !== "assistant") continue;
     addUsage(u, e.message.usage); u.calls++;
     for (const c of Array.isArray(e.message.content) ? e.message.content : []) {
@@ -72,6 +84,10 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     const es = entries(f);
     if (f === mainFile) { mainEntries = es; fileUsage(es, main, toolNames); } else fileUsage(es, children, toolNames);
   }
+  // The ledger receives message_end, not out-of-transcript model_usage entries (e.g. semantic find).
+  // Keep both in the metric, but reconcile ledger child tokens to assistant messages only.
+  const childMessages = zero();
+  for (const f of files) if (f !== mainFile) fileUsage(entries(f).filter(e => e.type === "message" && isRec(e.message) && e.message.role === "assistant"), childMessages, new Map());
   const infraErrors: string[] = [];
   for (const f of files) for (const e of entries(f)) {
     if (e.type === "message" && isRec(e.message) && e.message.role === "assistant" && e.message.stopReason === "error" && INFRA.test(String(e.message.errorMessage ?? "")))
@@ -142,7 +158,7 @@ export function evaluate(c: BenchCase, rep: number, run: MissionRun, sessionDir:
     noScoutEvidence: !evidence.some(e => /^agent:\/\//.test(e.locator)),
     criticHonored: !c.requireCritic || !completed || (critics > 0 && verdict?.criticId !== undefined),
     // Subagent usage the provider reported must reach the mission ledger.
-    accountingComplete: children.total === ledger.childTokens,
+    accountingComplete: childMessages.total === ledger.childTokens,
   };
   const verdictAt = verdictRaw ? Date.parse(String(verdictRaw.at)) : NaN;
   return {

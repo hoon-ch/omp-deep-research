@@ -25,6 +25,9 @@ export function runMission(opts: { cwd: string; sessionDir: string; prompt: stri
   const timer = setTimeout(() => { timedOut = true; send({ id: "abort", type: "abort" }); setTimeout(() => child.kill("SIGTERM"), 15_000); finish(); }, opts.timeoutMs);
   const onFrame = (f: Record<string, unknown>) => {
     if (f.type === "ready") send({ id: "prompt", type: "prompt", message: opts.prompt });
+    else if (f.type === "prompt_result" && f.agentInvoked === false && !settled) {
+      settled = true; send({ id: "state", type: "get_state" });
+    }
     else if (f.type === "agent_start") agentRuns++;
     else if (f.type === "extension_error") errors.push(`extension_error ${String(f.event)}: ${String(f.error)}`);
     else if (f.type === "response" && f.success === false) errors.push(`${String(f.command)}: ${String(f.error)}`);

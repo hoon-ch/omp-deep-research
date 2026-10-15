@@ -1,10 +1,10 @@
 # Frozen OMP settings for the scout-allocation benchmark (loaded with --config).
-# Pins every model a mission can reach so runs stay comparable, and removes
-# sources of variance that are not part of the extension under test.
+# Pins selectable mission model roles and removes fallback/memory variance.
+# Built-in find uses OMP's own unversioned judge backend; this overlay cannot pin its provider revision.
 modelRoles:
-  default: anthropic/claude-sonnet-5-5:medium
+  default: openai-codex/gpt-6.1-sol:high
   smol: alibaba-token-plan/qwen3.8-flash:medium
-  review_worker: openai-codex/gpt-6.1-sol:high
+  review_worker: anthropic/claude-sonnet-5-5:medium
   web: google-antigravity/gemini-3.8-flash
 task:
   agentModelOverrides:
