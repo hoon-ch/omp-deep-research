@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
-import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SYSTEM_POLICY, taskItemCount } from "./src/policy.ts";
+import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, systemPolicy, taskItemCount } from "./src/policy.ts";
 import { buildReceipt } from "./src/receipts.ts";
 import { exportReport } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
@@ -117,7 +117,7 @@ export default function deepResearch(pi: HostAPI): void {
     const s = load(ctx).state;
     // External evidence is never interpolated into the system prompt.
     if (s?.intake) return { systemPrompt: [...event.systemPrompt, INTAKE_POLICY] };
-    if (s?.mission?.phase === "active") return { systemPrompt: [...event.systemPrompt, SYSTEM_POLICY] };
+    if (s?.mission?.phase === "active") return { systemPrompt: [...event.systemPrompt, systemPolicy(s.mission)] };
   });
   pi.on("session.compacting", (_event, ctx) => {
     if (!isMain(ctx)) return;
@@ -231,7 +231,7 @@ export default function deepResearch(pi: HostAPI): void {
         if (prepared.event) persist(prepared.event);
         // A mission started mid-turn has not seen the mission system policy yet; return it with the start result.
         const result = raw.op === "export" ? exportReport(s, ctx.cwd)
-          : raw.op === "start" && prepared.event ? { ...object(prepared.result), next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(state(ctx).mission!)].filter(Boolean).join(" "), policy: SYSTEM_POLICY } : prepared.result;
+          : raw.op === "start" && prepared.event ? { ...object(prepared.result), next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(state(ctx).mission!)].filter(Boolean).join(" "), policy: systemPolicy(state(ctx).mission!) } : prepared.result;
         refresh(ctx);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: { result } };
       } catch (error) {
