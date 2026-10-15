@@ -1,0 +1,356 @@
+{
+  "observed_at_utc": "2026-10-15T08:57:53.420256+00:00",
+  "total_research_tokens": 75391421,
+  "status": "measured lower bound, not complete mission total",
+  "includes_cached_input": true,
+  "sessions": [
+    {
+      "source": "2026-10-15T07-00-28-189Z_01a13e5c-bf9d-70b5-8120-606e22b330ce.jsonl",
+      "scope": "main/reviewer session prefix",
+      "usage": {
+        "input": 504737,
+        "cacheRead": 66782413,
+        "cacheWrite": 208131,
+        "output": 261028,
+        "totalTokens": 67756309,
+        "messages": 309
+      }
+    },
+    {
+      "source": "AuditBenchmark.jsonl",
+      "scope": "main/reviewer session prefix",
+      "usage": {
+        "input": 165956,
+        "cacheRead": 2205440,
+        "cacheWrite": 0,
+        "output": 13376,
+        "totalTokens": 2384772,
+        "messages": 23
+      }
+    },
+    {
+      "source": "AuditAttestation.jsonl",
+      "scope": "main/reviewer session prefix",
+      "usage": {
+        "input": 119539,
+        "cacheRead": 1024256,
+        "cacheWrite": 0,
+        "output": 8833,
+        "totalTokens": 1152628,
+        "messages": 16
+      }
+    },
+    {
+      "source": "critic-native-baseline-replicate.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 29185,
+        "cacheRead": 8832,
+        "cacheWrite": 0,
+        "output": 523,
+        "totalTokens": 38540,
+        "messages": 4
+      }
+    },
+    {
+      "source": "critic-native-baseline-s2-activated.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 22693,
+        "cacheRead": 29824,
+        "cacheWrite": 0,
+        "output": 509,
+        "totalTokens": 53026,
+        "messages": 5
+      }
+    },
+    {
+      "source": "critic-native-baseline-s2-explicit.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 5684,
+        "cacheRead": 4736,
+        "cacheWrite": 0,
+        "output": 111,
+        "totalTokens": 10531,
+        "messages": 2
+      }
+    },
+    {
+      "source": "critic-native-baseline-s2-fresh.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 9864,
+        "cacheRead": 18560,
+        "cacheWrite": 0,
+        "output": 209,
+        "totalTokens": 28633,
+        "messages": 3
+      }
+    },
+    {
+      "source": "critic-native-baseline-s2-recorded.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 9822,
+        "cacheRead": 9344,
+        "cacheWrite": 0,
+        "output": 137,
+        "totalTokens": 19303,
+        "messages": 2
+      }
+    },
+    {
+      "source": "critic-native-baseline.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 38591,
+        "cacheRead": 80256,
+        "cacheWrite": 0,
+        "output": 902,
+        "totalTokens": 119749,
+        "messages": 10
+      }
+    },
+    {
+      "source": "critic-native-final-bound.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 25560,
+        "cacheRead": 32768,
+        "cacheWrite": 0,
+        "output": 595,
+        "totalTokens": 58923,
+        "messages": 5
+      }
+    },
+    {
+      "source": "critic-native-final-exact.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 41240,
+        "cacheRead": 47744,
+        "cacheWrite": 0,
+        "output": 831,
+        "totalTokens": 89815,
+        "messages": 9
+      }
+    },
+    {
+      "source": "critic-native-final-s2-activated.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 22113,
+        "cacheRead": 19712,
+        "cacheWrite": 0,
+        "output": 463,
+        "totalTokens": 42288,
+        "messages": 4
+      }
+    },
+    {
+      "source": "critic-native-final-s2.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 18924,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 132,
+        "totalTokens": 19056,
+        "messages": 2
+      }
+    },
+    {
+      "source": "critic-native-h1-complete.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 24696,
+        "cacheRead": 44544,
+        "cacheWrite": 0,
+        "output": 569,
+        "totalTokens": 69809,
+        "messages": 6
+      }
+    },
+    {
+      "source": "critic-native-h1.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 12155,
+        "cacheRead": 43904,
+        "cacheWrite": 0,
+        "output": 530,
+        "totalTokens": 56589,
+        "messages": 5
+      }
+    },
+    {
+      "source": "critic-native-h2-complete.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 35112,
+        "cacheRead": 33920,
+        "cacheWrite": 0,
+        "output": 526,
+        "totalTokens": 69558,
+        "messages": 6
+      }
+    },
+    {
+      "source": "critic-native-h2.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 12110,
+        "cacheRead": 43008,
+        "cacheWrite": 0,
+        "output": 484,
+        "totalTokens": 55602,
+        "messages": 5
+      }
+    },
+    {
+      "source": "critic-native-h3-activated.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 23041,
+        "cacheRead": 30592,
+        "cacheWrite": 0,
+        "output": 517,
+        "totalTokens": 54150,
+        "messages": 5
+      }
+    },
+    {
+      "source": "critic-native-h3.jsonl",
+      "scope": "native orchestration (not nested critics)",
+      "usage": {
+        "input": 8939,
+        "cacheRead": 16512,
+        "cacheWrite": 0,
+        "output": 278,
+        "totalTokens": 25729,
+        "messages": 3
+      }
+    },
+    {
+      "source": "critic-context-live.jsonl",
+      "scope": "live main session (child separately)",
+      "usage": {
+        "input": 138876,
+        "cacheRead": 105654,
+        "cacheWrite": 0,
+        "output": 2773,
+        "totalTokens": 247303,
+        "messages": 14
+      }
+    },
+    {
+      "source": "critic-packet-live-exact.jsonl",
+      "scope": "live main session (child separately)",
+      "usage": {
+        "input": 124924,
+        "cacheRead": 80977,
+        "cacheWrite": 0,
+        "output": 1953,
+        "totalTokens": 207854,
+        "messages": 13
+      }
+    }
+  ],
+  "direct_trials": [
+    {
+      "source": "baseline.jsonl",
+      "invocations": 18,
+      "input_tokens": 409120,
+      "output_tokens": 18625
+    },
+    {
+      "source": "h1.jsonl",
+      "invocations": 18,
+      "input_tokens": 293711,
+      "output_tokens": 18149
+    },
+    {
+      "source": "h2.jsonl",
+      "invocations": 18,
+      "input_tokens": 256262,
+      "output_tokens": 18584
+    },
+    {
+      "source": "h3.jsonl",
+      "invocations": 18,
+      "input_tokens": 286811,
+      "output_tokens": 19580
+    },
+    {
+      "source": "baseline-replicate-s2.jsonl",
+      "invocations": 22,
+      "input_tokens": 526075,
+      "output_tokens": 23030
+    },
+    {
+      "source": "final-s2.jsonl",
+      "invocations": 22,
+      "input_tokens": 373773,
+      "output_tokens": 22204
+    },
+    {
+      "source": "baseline-s2.log (raw answers lost)",
+      "invocations": 22,
+      "input_tokens": 526028,
+      "output_tokens": 22423
+    }
+  ],
+  "supplemental_critics": [
+    {
+      "source": "main tool result 2026-10-15T07:16, two direct smoke calls",
+      "invocations": 2,
+      "input_tokens": 6433,
+      "output_tokens": 909
+    },
+    {
+      "source": "live-identity-usage.json, final actual task child",
+      "invocations": 1,
+      "input_tokens": 4355,
+      "output_tokens": 452
+    }
+  ],
+  "plumbing_probes": {
+    "first": [
+      {
+        "input": 1441,
+        "output": 20,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 1461,
+        "reasoningTokens": 9,
+        "cost": {
+          "input": 0.002882,
+          "output": 0.0002,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0.003082
+        },
+        "premiumRequests": 0
+      }
+    ],
+    "second_total_tokens": 1598,
+    "third": {
+      "input": 1651,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "output": 20,
+      "totalTokens": 1671,
+      "messages": 1
+    }
+  },
+  "known_critic_review_invocations": 142,
+  "critic_review_invocations_with_usage": 141,
+  "critic_input_tokens_all_observed_reviews": 2682568,
+  "exclusions": [
+    "Early real task child used --no-session and did not expose usage; one known critic invocation has unavailable tokens.",
+    "Any unsaved plumbing/model attempts not observable in retained journals.",
+    "Main/reviewer continuations and final delivery after this as-of prefix."
+  ],
+  "accounting": "Each actual invocation counted once. Native final-bound/exact structural replays do not reconsume stored critic usage. Cached reads are logical consumed tokens, not uncached tokens or monetary cost."
+}

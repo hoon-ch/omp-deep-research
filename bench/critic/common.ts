@@ -64,7 +64,7 @@ export function recordCritic(entries: SessionEntry[], spawn: Spawn, answer: stri
     content: [{ type: "text", text: answer }], details: { resolvedPath: `/tmp/${id}.md`, displayContent: { text: answer, startLine: 1 } } }, resolver(spawn.roleModel), CWD);
   appendEvent(entries, makeEvent(missionId, "receipt_recorded", { receipt: read }));
   try {
-    prepareOperation(restore(entries), { op: "critic", critic: { evaluator, receiptId: read.id, spawnReceiptId: task.id } }, `critic-${id}`, "anthropic/claude-opus-5-5", CWD);
+    appendEvent(entries, prepareOperation(restore(entries), { op: "critic", critic: { evaluator, receiptId: read.id, spawnReceiptId: task.id } }, `critic-${id}`, "anthropic/claude-opus-5-5", CWD).event);
     return { ok: true };
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
 }

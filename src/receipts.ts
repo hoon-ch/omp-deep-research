@@ -160,18 +160,20 @@ function criticReview(value: unknown): CriticReview | undefined {
   }
   if (!isRecord(value)) return undefined;
   const { assessment, summary, concerns, evidenceIds, evidenceDigest } = value;
-  const lists = [concerns, evidenceIds].every(v => Array.isArray(v) && v.length <= 100 && v.every(x => typeof x === "string"));
-  if (!lists || (assessment !== "pass" && assessment !== "revise") || typeof summary !== "string" || !summary.trim()
+  // Evidence IDs are bounded by the mission's exact evidence set in engine.ts, not the unrelated concerns limit.
+  if (!Array.isArray(concerns) || concerns.length > 100 || !concerns.every(x => typeof x === "string")
+    || !Array.isArray(evidenceIds) || !evidenceIds.every(x => typeof x === "string")
+    || (assessment !== "pass" && assessment !== "revise") || typeof summary !== "string" || !summary.trim()
     || typeof evidenceDigest !== "string" || !/^[0-9a-f]{64}$/.test(evidenceDigest)) return undefined;
-  return { assessment, summary: summary.trim().slice(0, 12_000), concerns: (concerns as string[]).map(c => c.slice(0, 12_000)),
-    evidenceIds: evidenceIds as string[], evidenceDigest };
+  return { assessment, summary: summary.trim().slice(0, 12_000), concerns: concerns.map(c => c.slice(0, 12_000)),
+    evidenceIds, evidenceDigest };
 }
 /**
- * Identity of a critic snapshot as handed to a critic: key order and whitespace are irrelevant, every value is not.
- * `notes` are excluded because they change without changing what the critic judges.
+ * Identity of handed material: key order and whitespace do not matter. Versioned review packets bind every value,
+ * including top-level notes. Unversioned legacy snapshots keep their historical notes exception when replayed.
  */
 export function snapshotHash(snapshot: Record<string, unknown>): string {
-  return hash({ ...snapshot, notes: undefined });
+  return hash(snapshot.packet === undefined ? { ...snapshot, notes: undefined } : snapshot);
 }
 const CRITIC_TEXT = CRITIC_INSTRUCTIONS.replace(/\s+/g, " ").trim();
 /**

@@ -220,9 +220,13 @@ critic은 플러그인에 포함된 읽기 전용 에이전트 `deep-research-cr
 
 `--critic`을 지정하지 않은 미션에서는 에이전트가 critic 브리프를 읽거나 critic을 실행하지 않으며, 결론의 한계나 답변에 "critic 미실시"를 적지 않습니다.
 
-Critic은 현재의 **전체 근거·실험 스냅샷**을 검토해야 합니다. 브리프 스냅샷에는 `evidenceDigest`가 들어 있고 critic은 응답에 이 값을 그대로 적습니다. `op:"critic"`은 판정·요약·우려사항·근거 ID·다이제스트를 메인 모델의 입력이 아니라 critic 응답에서 가져오며, 응답의 다이제스트가 현재 스냅샷과 다르면 거부합니다. 따라서 근거·실험·세그먼트가 바뀐 뒤 과거 응답을 다시 등록할 수 없고 새 critic을 실행해야 합니다.
+Critic은 현재의 **모든 근거·실험을 담은 review packet**을 검토해야 합니다. `view:"critic"`의 `snapshot`은 `packet: "deep-research.critic-packet.v2"`, `serialization: "stable-json.v1"`을 명시합니다. 모든 근거의 ID·출처 종류·stance·제목·주장·요약·locator·원래 영수증 ID와 전체 실험 기록·요구사항·notes를 유지하며, 근거 등록 시각(`at`)과 중복 제거 키(`fingerprint`)만 critic에게 보내지 않습니다. 생략한 두 필드는 원장과 `evidenceDigest`에 남습니다. Critic이 생략된 필드까지 검토했다고 주장하지 않습니다.
 
-`--critic` 지정 여부와 관계없이 모든 critic 기록은 그 critic을 만든 `task` 호출 영수증(`spawnReceiptId`, 필수)과, 그 호출이 만든 에이전트의 `agent://<id>`를 읽은 응답 영수증(또는 critic 응답이 하나뿐인 동기 `task` 결과)에 연결되어야 합니다. `task` 영수증은 에이전트마다 ID, 호스트가 보고한 모델 role을 해석한 모델(`roleModel`), 이전 OMP의 작업 항목 단일 모델 고정값, 호스트가 보고한 실행 모델(대체 모델 여부 포함), 그 에이전트의 작업 입력에 들어 있던 스냅샷 해시와 critic 지시문 포함 여부를 하나의 레코드로 묶습니다. 응답을 만든 바로 그 에이전트가 `evaluator` 모델로 실행되었어야 합니다(보고된 실행 모델이 있으면 그것, 없으면 고정값 또는 role 모델). 또 그 에이전트의 작업 입력에 현재 스냅샷(키 순서·공백 무관, `notes` 제외)과 critic 지시문 전체(공백 무관)가 그대로 들어 있어야 합니다. 다이제스트만 맞추고 요약·수정·과거 스냅샷을 넘기거나 지시문을 줄이거나 고친 경우, 같은 batch의 다른 에이전트 응답은 거부합니다. 다만 지시문과 스냅샷 주변에 덧붙인 지시는 감지하지 못합니다. 비동기 critic은 생성 시점에 보고된 role로 확인하므로, 실행 중 OMP의 재시도 대체 모델로 바뀐 경우는 감지하지 못합니다. 호스트가 관측한 입력과 결과로 확인하는 방식이며, 제공자가 실제로 어떤 모델을 썼는지에 대한 암호학적 증명은 아닙니다. 지정된 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만, 한계를 밝힌 `inconclusive`는 허용합니다.
+Critic은 `evidenceDigest`를 그대로 복사하고 모든 근거 ID를 순서대로 응답해야 합니다. 근거 ID 수는 현재 미션과 정확히 일치해야 하며, 우려사항 배열의 100개 제한과 별개이므로 500개 근거도 검토할 수 있습니다. `op:"critic"` 입력과 critic 응답 schema는 바뀌지 않습니다. 엔진이 새 critic 기록에 전체 packet의 `snapshotHash`를 추가하고, verdict 시에도 현재 packet과 비교합니다. **검토 요청 뒤 notes나 mode가 바뀌어도 재검토가 필요합니다.** 검토 전에 notes를 정리하세요. 이미 등록된 구형 critic은 원래 digest 규칙으로 재생되지만, 업데이트 전에 생성했어도 아직 등록하지 않은 critic은 새 브리프로 다시 실행해야 합니다. 측정 방법과 한계는 [critic context 실험 보고서](docs/CRITIC_CONTEXT.ko.md)를 참고하세요.
+
+`--critic` 지정 여부와 관계없이 모든 critic 기록은 그 critic을 만든 `task` 호출 영수증(`spawnReceiptId`, 필수)과, 그 호출이 만든 에이전트의 `agent://<id>`를 읽은 응답 영수증(또는 critic 응답이 하나뿐인 동기 `task` 결과)에 연결되어야 합니다. Host는 에이전트 ID, 호스트 보고 model role을 해석한 `roleModel`, 이전 OMP의 단일 model pin, 보고된 실행 모델/fallback, 그 에이전트에게 전달한 packet hash와 전체 critic 지시문을 함께 확인합니다. 응답을 만든 바로 그 에이전트가 `evaluator` 모델이어야 하며 보고된 실행 모델, 이전 pin, role 모델 순서로 확인합니다.
+
+새 versioned packet은 **notes를 포함한 모든 값과 배열 순서**가 같아야 합니다. 객체 key 순서와 JSON 공백만 무관합니다. 요약·수정·과거 packet, 짧아지거나 바뀐 지시문, 같은 batch의 다른 agent 응답은 거부합니다. 다만 packet과 지시문의 존재 확인은 의미적으로 완전한 검토의 증명이 아니며, 주위에 덧붙인 지시도 감지하지 못합니다. 비동기 task에서 최종 실행 모델이 보고되지 않으면 role을 신뢰하므로 숨은 fallback을 완전히 감지하지 못합니다. 제공자의 실제 모델 실행을 암호학적으로 증명하는 방식은 아닙니다. 지정 critic의 유효한 `pass` 없이 `conclusive`를 기록하지 못하지만 한계를 밝힌 `inconclusive`는 허용합니다.
 
 ## 6. 상태와 파일
 

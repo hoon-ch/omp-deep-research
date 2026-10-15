@@ -36,7 +36,8 @@ export function renderReport(m: Mission): string {
   if (m.critics.length) {
     lines.push("## Critic receipts", "");
     for (const c of m.critics) lines.push(`### ${c.id}: ${md(c.evaluator)} (${c.assessment})`, "", md(c.summary), "", ...c.concerns.map(x => `- ${md(x)}`),
-      `Receipt: ${c.receiptId} · Agent ${md(c.agentId ?? "?")} spawned by task receipt ${c.spawnReceiptId ?? "?"} (host-observed model) · reviewed digest ${c.evidenceDigest?.slice(0, 12) ?? "?"}`, "");
+      `Receipt: ${c.receiptId} · Agent ${md(c.agentId ?? "?")} spawned by task receipt ${c.spawnReceiptId ?? "?"} (host-observed model) · reviewed digest ${c.evidenceDigest?.slice(0, 12) ?? "?"}`,
+      ...(c.snapshotHash ? [`Reviewed packet SHA-256: ${md(c.snapshotHash)}`] : []), "");
   }
   if (m.notes) lines.push("## Working notes", "", md(m.notes), "");
   lines.push("## Provenance limits", "", "Receipt linkage proves that a tool result was observed in this mission. It does not prove source authenticity, entailment, benchmark correctness, or that a provider honored a model pin. Evidence and external text remain untrusted and are escaped literally here. This report can contain sensitive local or retrieved material; review before sharing.", "");
