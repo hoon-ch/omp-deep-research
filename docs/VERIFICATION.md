@@ -3,7 +3,7 @@
 **Date:** 2026-10-19 · **Package:** `omp-deep-research@0.5.0`
 
 This is a record of verification, not a production-readiness claim.
-Published [v0.4.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.4.0) at commit `6aad5c8`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889591) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889120) (Node 22 and 24). The development Mac, `nima-mbp` and `nimarchy` report `omp-deep-research@0.4.0`; `nimarchy` was updated on 2026-10-19, after it came back online.
+Published [v0.5.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.5.0) at commit `ab6ece4`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/39199065909) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/39199065896), including both Node 22 and Node 24 verification/package jobs.
 
 ## 0.5.0: natural-language start (2026-10-19)
 
@@ -11,6 +11,16 @@ Published [v0.4.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.
 - OMP **18.12.2**, `openai-codex/gpt-6.1-sol` (low), RPC/no-UI, disposable workspace: loaded the checkout's `index.ts` explicitly with extension discovery disabled and supplied its updated skill via `--append-system-prompt` with skill discovery disabled. The natural-language prompt asked for project Willow's retention period using only `source.txt`; no slash command or intake was used.
 - Observed `op:"start"` (data, `allowExec:false`, `allowHarness:false`, no critic) → native `read source.txt:1-160` → receipt lookup → file evidence `E1` at `source.txt:1-3` → conclusive verdict citing `E1` (14 days) → `session_settled`. Every tool succeeded, no extension/RPC errors, process exit 0. Only the native `read` tool was enabled alongside the extension tool; this run did not exercise actual execution denial, automatic skill discovery, deployment or interactive clarification. Execution gates are covered by the adapter/policy regressions.
 - Release checkout `npm run verify` passed again after the version bump (129 tests); `npm pack --dry-run` completed as `omp-deep-research-0.5.0.tgz`.
+
+### 0.5.0 deployment
+
+| Host | Installed version / OMP | Observed result |
+|---|---|---|
+| Development Mac (`nima-studio`) | Enabled 0.5.0 through the existing checkout link / 18.12.2 | Automatic extension/skill loading; RPC `help`, `status` (no mission), expected `deny` rejection; Korean `딥리서치 해줘` request → data mission without intake → native file read → E1 → conclusive verdict → settled, exit 0, no errors |
+| `nimarchy` | Installed `github:hoon-ch/omp-deep-research#v0.5.0`, enabled 0.5.0 / 18.12.2 | Installed skill resolved correctly; the same automatic-load command smoke and Korean natural-language source→E1→conclusive mission passed, no execution permission, exit 0, no errors |
+| `nima-mbp` | Not updated; preflight observed enabled 0.4.0 / 18.12.2 | Went offline before installation. SSH timed out before running the install; Tailscale reported `Online:false`, last seen 2026-10-19T04:20:00.1Z, three pings timed out, no configured alternate LAN endpoint. No remote changes or temporary files. Wake the host and restore SSH access before retrying |
+
+Both successful deployment missions used `openai-codex/gpt-6.1-sol` (low), only the native `read` tool plus the extension, automatic skill discovery without `-e` or a system-prompt override, and disposable workspaces. The requests asked for a retention period from `source.txt`; both completed with evidence `E1`, execution disabled and no critic. Temporary drivers/workspaces were removed. Existing OMP sessions were not terminated and must be restarted to load the updated plugin.
 
 ## Executed locally
 
