@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-10-19
+
+- **Natural-language starts:** user-requested Deep Research investigations can call `op:"start"` without a prior `/deep-research` intake. The engine applies default budgets, host-reported primary model, execution disabled and no critic; it ignores model-supplied operator settings. Command-opened intakes retain their configured settings. Active/paused work, explicit resume, execution consent, evidence provenance and verdict validation are unchanged. Tool/skill guidance distinguishes research requests from ordinary questions and coding, and asks only for missing material requirements.
+
 ## 0.4.0 — 2026-10-15
 
 Fixes the three provenance gaps reported against v0.3.0 (`54328f5`) in issues #1–#3.

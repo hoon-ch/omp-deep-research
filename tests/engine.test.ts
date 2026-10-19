@@ -478,7 +478,43 @@ test("intake creates no mission; start applies operator settings the tool cannot
   assert.equal(m.allowHarness, true); assert.equal(m.allowExec, false);
   assert.deepEqual(m.constraints, [...DEFAULT_SETTINGS.constraints, "Use the existing benchmark only"]);
   assert.equal((l.op({ op: "start", mission: { ...MISSION, maxToolCalls: 999, allowExec: true } }, "start-1") as { duplicate: boolean }).duplicate, true);
-  assert.throws(() => l.op({ op: "start", mission: MISSION }, "start-2"), /No pending intake/);
+  assert.throws(() => l.op({ op: "start", mission: MISSION }, "start-2"), /open mission exists/);
+});
+test("start without intake cannot grant itself permissions, budgets or a critic", () => {
+  const l = new Ledger();
+  const input = { op: "start", allowExec: true, maxToolCalls: 999, mission: {
+    ...MISSION, allowExec: true, allowHarness: true, maxToolCalls: 999, maxChildren: 32,
+    maxContinuations: 8, maxMinutes: 240, maxTokens: 1000000, maxCost: 1000,
+    criticModel: "test/critic", primaryModel: "test/impostor",
+  } };
+  l.op(input, "natural-start");
+  const m = l.state().mission!;
+  assert.equal(m.objective, MISSION.objective); assert.equal(m.mode, "data");
+  assert.equal(m.allowExec, false); assert.equal(m.allowHarness, false);
+  assert.equal(m.maxToolCalls, DEFAULT_SETTINGS.maxToolCalls); assert.equal(m.maxChildren, DEFAULT_SETTINGS.maxChildren);
+  assert.equal(m.maxContinuations, DEFAULT_SETTINGS.maxContinuations); assert.equal(m.maxMinutes, DEFAULT_SETTINGS.maxMinutes);
+  assert.equal(m.maxTokens, undefined); assert.equal(m.maxCost, undefined); assert.equal(m.criticModel, undefined);
+  assert.equal(m.primaryModel, "test/main");
+  assert.deepEqual(m.constraints, [...DEFAULT_SETTINGS.constraints, ...MISSION.constraints]);
+  assert.deepEqual(m.deliverables, [...DEFAULT_SETTINGS.deliverables, ...MISSION.deliverables]);
+  const retry = l.op(input, "natural-start");
+  assert.ok(retry && typeof retry === "object" && "duplicate" in retry && retry.duplicate === true);
+  assert.equal(l.state().events.length, 1);
+  assert.throws(() => l.op({ ...input, mission: { ...input.mission, objective: "Different question" } }, "natural-start"), /different input/);
+  for (const phase of ["active", "paused"] as const) {
+    if (phase === "paused") l.add(lifecycleEvent(l.state(), "pause", NOW));
+    assert.throws(() => l.op({ op: "start", mission: MISSION }), /open mission exists/);
+    assert.equal(l.state().mission!.id, m.id); assert.equal(l.state().mission!.phase, phase);
+  }
+});
+test("a new natural-language mission does not inherit prior execution consent", () => {
+  const l = new Ledger();
+  l.start({ mode: "data", allowExec: true, criticModel: "test/critic", maxToolCalls: 7 });
+  l.add(lifecycleEvent(l.state(), "cancel", NOW));
+  l.op({ op: "start", mission: MISSION });
+  assert.equal(l.state().mission!.allowExec, false);
+  assert.equal(l.state().mission!.criticModel, undefined);
+  assert.equal(l.state().mission!.maxToolCalls, DEFAULT_SETTINGS.maxToolCalls);
 });
 test("intake start rejects missing mode and web mode with execution consent", () => {
   const l = new Ledger(); l.add(intakeEvent(l.state(), "", { ...structuredClone(DEFAULT_SETTINGS), allowHarness: true }, NOW));

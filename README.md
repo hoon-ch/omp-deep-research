@@ -2,11 +2,11 @@
 
 **Gajae Code의 autoresearch에서 착안한 Oh My Pi 전용 조사 확장입니다.** 웹·로컬 데이터·실험에서 근거를 모아 구조화된 결론을 남깁니다. OMP 코어를 포크하지 않으며 기존 `/autoresearch` 명령을 변경하지 않습니다.
 
-> 버전 0.4.0입니다. 단위·어댑터 계약 테스트와 OMP 18.6.1/18.7.0/18.11.0 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
+> 버전 0.5.0입니다. 단위·어댑터 계약 테스트와 OMP 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
 
 ```text
-/deep-research [--mode …]
-  → (모드 없으면) intake: 목표·제약·결과물·모드 확인 → deep_research start
+자연어 Deep Research 요청 → deep_research start
+  또는 /deep-research [--mode …] → (모드 없으면) intake → deep_research start
   → 원문 읽기 / 허용된 데이터 실험(autoresearch.sh 하네스)
   → 도구 결과 영수증 → 근거 원장
   → 선택적 critic 검토
@@ -30,11 +30,11 @@ Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니�
 OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다. OMP는 git 플러그인을 `bun install`로 받으므로 `bun`이 `PATH`에 있어야 합니다(없으면 `Executable not found in $PATH: "bun"` 오류).
 
 ```bash
-omp plugin install github:hoon-ch/omp-deep-research#v0.4.0
+omp plugin install github:hoon-ch/omp-deep-research#v0.5.0
 omp plugin list            # omp-deep-research 확인
 ```
 
-설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.4.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
+설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.5.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
 
 0.3.0에서 업데이트할 때 `--critic`을 쓰면 `modelRoles.review_worker`를 설정하고 `--critic @review_worker`로 시작하세요. 업데이트 전에 요청했지만 아직 등록하지 않은 critic은 새 브리프로 다시 실행해야 합니다. 이미 등록된 과거 critic과 기존 근거·실험 원장은 유지됩니다. 설정과 재검토 조건은 [critic 안내](#5-실험과-critic)를 참고하세요.
 
@@ -49,7 +49,15 @@ omp plugin link ~/repos/omp-deep-research
 
 ## 2. 사용 예시
 
-OMP 입력창에서 다음처럼 실행합니다. `--mode`를 주면 바로 시작합니다.
+슬래시 명령 없이 자연어로 Deep Research를 요청할 수 있습니다.
+
+```text
+Deep Research로 OMP와 Gajae Code의 최신 멀티프로바이더 지원을 공식 문서와 소스로 비교해줘
+```
+
+에이전트는 요청에 적힌 목표·범위·출처에서 모드를 정하고, 중요한 조건이 빠진 경우에만 질문합니다. 일반 질문이나 코딩 요청을 자동으로 조사 미션으로 바꾸지는 않습니다. 자연어 시작은 기본 예산(도구 60회, 하위 에이전트 8개, 20분, 추가 진행 6회), 실행 권한 없음, critic 없음으로 시작합니다. 이미 active/paused 미션이 있으면 덮어쓰지 않습니다. 예산이나 critic을 지정하려면 아래 명령을 사용하세요.
+
+`--mode`를 주면 명시한 모드로 바로 시작합니다.
 
 ```text
 /deep-research --mode web OMP와 Gajae Code의 최신 멀티프로바이더 지원을 공식 문서와 소스로 비교해줘
@@ -182,7 +190,7 @@ deep-research-metric-direction: lower
 | `op` | 내용 |
 |---|---|
 | `read` | 요약, 전체 미션, 최근 도구 영수증, 세그먼트별 실행, 탐색 브리프, critic 브리프, 다음 실험 브리프. `view: "summary"\|"full"\|"receipts"\|"runs"\|"explore"\|"critic"\|"iterate"` |
-| `start` | 대기 중인 intake를 확인된 목표·모드·제약·결과물(선택: 지표)로 미션으로 전환. 예산·실행 권한은 변경 불가 |
+| `start` | 자연어 조사 요청을 기본 설정으로 시작하거나 대기 중인 intake를 미션으로 전환. 목표·모드·제약·결과물과 선택적 지표를 받음. 예산·실행 권한·critic은 변경 불가 |
 | `evidence` | 원문 읽기 결과와 연결된 근거 추가. 같은 출처·주장·stance는 중복 제거 |
 | `segment` | 작업량·측정 방식·지표가 바뀌어 이전 실행과 비교할 수 없을 때 새 세그먼트 시작 |
 | `run` | 실제 출력의 `METRIC`으로 baseline/keep/discard/crash/checks_failed 기록. `ASI` 줄도 함께 보존 |

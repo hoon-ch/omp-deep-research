@@ -85,6 +85,28 @@ test("native autoresearch and arbitrary product tools are untouched when no miss
   const h = mockHost(); try { assert.equal(h.emit("tool_call", { toolName: "write", toolCallId: "w1", input: {} }), undefined); }
   finally { h.cleanup(); }
 });
+test("a tool-started mission captures evidence and completes without a slash command", async () => {
+  const h = mockHost(); try {
+    const start = await h.call({ op: "start", mission: {
+      objective: "Compare A and B using inspected sources", mode: "mixed", constraints: [], deliverables: ["Comparison"],
+    } }, "natural-start");
+    assert.equal(start.isError, undefined);
+    const m = h.state().mission!;
+    assert.equal(m.phase, "active"); assert.equal(m.primaryModel, "test/main");
+    for (const toolName of ["bash", "eval", "write"]) {
+      const blocked = h.emit("tool_call", { toolName, toolCallId: `denied-${toolName}`, input: {
+        command: "bash autoresearch.sh", path: "autoresearch.sh", code: "1+1",
+      } });
+      assert.ok(blocked && typeof blocked === "object" && "block" in blocked && blocked.block === true);
+    }
+    assert.equal((await source(h)).isError, undefined);
+    assert.equal((await h.call({ op: "verdict", verdict: VERDICT }, "natural-verdict")).isError, undefined);
+    assert.equal(h.state().mission!.phase, "completed");
+    assert.equal(h.state().mission!.evidence[0]!.receiptId, "read-source");
+    assert.equal(h.stop(1), undefined);
+    assert.equal(h.prompts.length, 0);
+  } finally { h.cleanup(); }
+});
 test("parent acquisition budget blocks new searches but allows verdict recording", async () => {
   const h = mockHost(); try {
     await h.command("--mode web --max-tools 1 Inspect sources"); await source(h);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CRITIC_AGENT, CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRUCTIONS, EXPLORE_OUTPUT_SCHEMA, ITERATE_INSTRUCTIONS, ITERATE_OUTPUT_SCHEMA } from "./briefs.ts";
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
-import type { Critic, Evidence, Intake, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
+import type { Critic, Evidence, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
 import { EXECUTION_TOOLS, LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
 import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
 
@@ -60,7 +60,7 @@ function newPass(config: MissionConfig, at: string): Pass {
 export function current(state: ResearchState): Mission {
   if (!state.mission) throw new ResearchError(state.intake
     ? "Intake is pending. Clarify the mission with the user, then call deep_research op='start'."
-    : "No mission. Start one with /deep-research --mode web|data|mixed <objective>, /deep-research --spec <file>, or /deep-research <objective> for a clarifying intake.");
+    : "No mission. For a user-requested Deep Research investigation, call deep_research op='start' with objective, mode, constraints and deliverables, or use /deep-research with --mode, --spec or a clarifying intake.");
   return state.mission;
 }
 export function active(state: ResearchState): Mission {
@@ -279,19 +279,22 @@ function assertShown(r: Receipt, locator: string, cwd: string, kind: "File" | "E
   }
 }
 export interface Prepared { event?: LedgerEvent; result: unknown; }
-/** Completes a cold intake. Operator settings (budgets, execution consent, critic, declared metric) are never model-controlled. */
-function startMission(intake: Intake | undefined, raw: unknown, requestId: string, requestHash: string, at: string): Prepared {
-  if (!intake) throw new ResearchError("No pending intake. Only the user can begin one with /deep-research <objective>.");
+/** Starts user-requested research or completes an intake. Operator settings are never model-controlled. */
+function startMission(state: ResearchState, raw: unknown, requestId: string, requestHash: string, evaluator: string, at: string): Prepared {
+  const intake = state.intake;
+  if (!intake) assertNoOpenWork(state);
+  const settings = intake?.settings ?? { ...DEFAULT_SETTINGS, primaryModel: evaluator };
   const p = object(raw, "mission");
   const metric = p.metric === undefined ? undefined : validateMetric(p.metric, "mission.metric");
-  if (metric && intake.settings.metric && hash(metric) !== hash(intake.settings.metric))
-    throw new ResearchError(`The operator declared metric ${intake.settings.metric.name} (${intake.settings.metric.direction}); the intake cannot change it`);
-  const config = validateConfig({ ...intake.settings, objective: p.objective, mode: p.mode,
-    ...(intake.settings.metric ?? metric ? { metric: intake.settings.metric ?? metric } : {}),
-    constraints: [...new Set([...intake.settings.constraints, ...strings(p.constraints, "mission.constraints")])],
-    deliverables: [...new Set([...intake.settings.deliverables, ...strings(p.deliverables, "mission.deliverables")])] });
+  if (metric && settings.metric && hash(metric) !== hash(settings.metric))
+    throw new ResearchError(`The operator declared metric ${settings.metric.name} (${settings.metric.direction}); the start tool cannot change it`);
+  const config = validateConfig({ ...settings, objective: p.objective, mode: p.mode,
+    ...(settings.metric ?? metric ? { metric: settings.metric ?? metric } : {}),
+    constraints: [...new Set([...settings.constraints, ...strings(p.constraints, "mission.constraints")])],
+    deliverables: [...new Set([...settings.deliverables, ...strings(p.deliverables, "mission.deliverables")])] });
   const data = { config, pass: newPass(config, at) };
-  return { event: makeEvent(intake.id, "mission_created", data, at, requestId, requestHash), result: { missionId: intake.id, ...data } };
+  const missionId = intake?.id ?? randomUUID();
+  return { event: makeEvent(missionId, "mission_created", data, at, requestId, requestHash), result: { missionId, ...data } };
 }
 /** Packet schema version; `serialization` separately versions the canonical hash encoding in validation.ts. */
 const CRITIC_PACKET = "deep-research.critic-packet.v2";
@@ -349,7 +352,7 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
     if (previous.requestHash !== requestHash) throw new ResearchError("requestId was already used with different input");
     return { result: { duplicate: true, ...object(previous.data) } };
   }
-  if (op === "start") return startMission(state.intake, input.mission, requestId, requestHash, at);
+  if (op === "start") return startMission(state, input.mission, requestId, requestHash, evaluator, at);
   const m = active(state);
   const emit = (type: LedgerEvent["type"], data: object): Prepared => ({ event: makeEvent(m.id, type, data, at, requestId, requestHash), result: data });
   switch (op) {

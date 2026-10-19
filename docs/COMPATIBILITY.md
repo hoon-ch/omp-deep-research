@@ -37,7 +37,7 @@ The host contract uses `pi.zod`, `registerTool`, `registerCommand`, `appendEntry
 
 | Gajae concept | Gajae runtime | Implementation here |
 |---|---|---|
-| Explicit mode | `write` requires `--mode`; spec intake fails without `autoresearch-mode:`; never inferred | `--mode` or `--spec` starts immediately; otherwise an intake opens and `deep_research op:"start"` requires a mode. Never defaulted or inferred |
+| Explicit mode | `write` requires `--mode`; spec intake fails without `autoresearch-mode:`; never inferred | `--mode` or `--spec` starts immediately; a slash command without either opens an intake. Natural-language research requests may use `op:"start"` directly with a mode selected from the user's stated scope/sources. The engine always requires a mode; incidental files do not select it |
 | Cold intake | Bare/goal invocation returns `clarification_required` and writes nothing; blocking research tools is instruction-only | Intake event, no mission; every non-control tool is blocked until `op:"start"`. Budgets, execution consent, critic and an operator-declared metric stay operator-only. Refused without a UI (print/json) because `ask` cannot run |
 | Spec intake | `--spec`: `autoresearch-mode:` (required), H1 objective, `## Deliverables` or acceptance-criteria items, `## Constraints`, optional metric lines | `--spec <file>`: same rules; accepts `deep-research-*` and Gajae `autoresearch-*` keys; records the spec path and SHA-256. `--mode`/`--metric` flags may not contradict the spec |
 | Mode change (`mode_set`) | `write` with a different mode records `mode_set` | `/deep-research mode web\|data\|mixed` (operator-only) records `mode_set`; evidence is kept; execution consent still requires data/mixed |

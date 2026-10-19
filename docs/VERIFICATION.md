@@ -1,9 +1,16 @@
 # Verification record
 
-**Date:** 2026-10-15 · **Package:** `omp-deep-research@0.4.0`
+**Date:** 2026-10-19 · **Package:** `omp-deep-research@0.5.0`
 
 This is a record of verification, not a production-readiness claim.
 Published [v0.4.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.4.0) at commit `6aad5c8`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889591) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/38728889120) (Node 22 and 24). The development Mac, `nima-mbp` and `nimarchy` report `omp-deep-research@0.4.0`; `nimarchy` was updated on 2026-10-19, after it came back online.
+
+## 0.5.0: natural-language start (2026-10-19)
+
+- `npm run verify`: TypeScript check and **129 tests passed**, no failures or skips. Regressions cover direct-start permission/budget/critic injection, idempotency, active/paused replacement refusal, fresh defaults after a cancelled authorized mission, and adapter receipt/evidence/verdict completion without a command.
+- OMP **18.12.2**, `openai-codex/gpt-6.1-sol` (low), RPC/no-UI, disposable workspace: loaded the checkout's `index.ts` explicitly with extension discovery disabled and supplied its updated skill via `--append-system-prompt` with skill discovery disabled. The natural-language prompt asked for project Willow's retention period using only `source.txt`; no slash command or intake was used.
+- Observed `op:"start"` (data, `allowExec:false`, `allowHarness:false`, no critic) → native `read source.txt:1-160` → receipt lookup → file evidence `E1` at `source.txt:1-3` → conclusive verdict citing `E1` (14 days) → `session_settled`. Every tool succeeded, no extension/RPC errors, process exit 0. Only the native `read` tool was enabled alongside the extension tool; this run did not exercise actual execution denial, automatic skill discovery, deployment or interactive clarification. Execution gates are covered by the adapter/policy regressions.
+- Release checkout `npm run verify` passed again after the version bump (129 tests); `npm pack --dry-run` completed as `omp-deep-research-0.5.0.tgz`.
 
 ## Executed locally
 

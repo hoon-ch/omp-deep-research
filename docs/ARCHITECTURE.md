@@ -8,12 +8,15 @@
 
 `src/command.ts` parses explicit operator lifecycle, budget, metric and spec choices. It tokenizes without shell evaluation. `--mode` produces a mission config, `--spec` a config from `src/spec.ts`, and neither produces an intake with operator settings only. Execution consent comes from initial `--harness`/`--allow-exec` flags or operator-only `allow harness|exec`/`deny` commands, never a model tool call or an `ask` response. A critic selector is resolved through the host before the mission or intake is recorded.
 
+For a natural-language Deep Research request, the agent may call `op:"start"` without an intake. `src/engine.ts` supplies `DEFAULT_SETTINGS` and the host-reported primary model; model-provided budget/permission/critic fields are not applied. An existing intake instead supplies its operator settings. Both paths validate objective, mode, constraints and deliverables, merge the mandatory research-only defaults, persist one `mission_created` event and use the same receipt/verdict workflow. Active or paused missions cannot be replaced. User intent and selection of a mode from the stated request are instruction-level decisions, not a natural-language authorization parser.
+
 `src/runs.ts` holds segment-scoped run math (baseline, best, effect/MAD, run table). `src/receipts.ts` turns a tool result into a receipt (hashes, preview, `METRIC`/`ASI`, opened sources vs. output links, files whose content was returned, per-agent task records, structured critic answers) and extracts blocking task usage. `src/briefs.ts` holds the critic and iterate briefs and their output schemas. `src/policy.ts` governs known parent tool calls, including the intake allowlist and the `--harness` file/command check. `src/report.ts` performs explicit, append-only local exports with untrusted text escaped. `src/schema.ts` declares the model-visible schema using the host-provided builder. `src/host.ts` is a small structural contract, not a vendored host SDK.
 
 ## State transitions
 
 ```text
 (nothing) --operator start with --mode or --spec--> active
+(nothing) --user natural-language research request, agent op:"start"--> active (default budgets, no exec/harness/critic)
 (nothing) --operator start without either--> intake (no mission; non-control tools blocked)
 intake --agent deep_research op:"start" with clarified objective/mode--> active
 intake --operator cancel/clear--> (nothing)
@@ -25,7 +28,7 @@ paused --operator resume (new pass budget)--> active
 active --conclusive verdict--> completed
 active/paused --operator cancel--> cancelled
 any current mission --operator clear--> (no current mission)
-completed/cancelled --operator start--> new active mission
+completed/cancelled --operator start or user-requested agent op:"start"--> new active mission
 unreadable ledger --operator reset-ledger--> (nothing); earlier events stay in history, unreplayed
 ```
 

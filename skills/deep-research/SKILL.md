@@ -1,6 +1,6 @@
 ---
 name: deep-research
-description: Evidence-driven web, data, or mixed investigation with source receipts, an append-only mission ledger, bounded continuation, optional critic review, and structured verdicts. Research only, not code implementation.
+description: Evidence-driven web, data, or mixed investigation with source receipts, an append-only mission ledger, bounded continuation, optional critic review, and structured verdicts. Accept user requests in natural language; no /deep-research command required. Research only, not code implementation.
 ---
 
 # OMP Deep Research
@@ -9,13 +9,14 @@ Use for a defensible research conclusion, not product changes or metric-driven s
 
 ## Start and scope
 
-Only the user opens work, in one of three ways:
+Start only for a user-requested Deep Research investigation, not ordinary questions or coding tasks. A slash command is optional:
 
+- A natural-language request such as "Investigate this with deep research" may start directly with `deep_research({"op":"start","mission":{"objective":"…","mode":"web","constraints":[],"deliverables":["…"]}})` when no active/paused mission or intake exists. Use the user's stated goal, scope and requested sources to select web/data/mixed; do not infer mode from incidental files. Ask only for missing material requirements; do not repeat questions the request already answers. Empty arrays use the built-in research-only constraints and structured-verdict deliverable. Without an intake, the engine uses default budgets, execution disabled and no critic. For custom budgets or a critic, guide the user to the slash command; never inject operator settings into the start tool.
 - `/deep-research --mode web|data|mixed <objective>` starts a mission immediately. Read it with `deep_research({"op":"read"})`.
 - `/deep-research --spec <file.md>` starts from a written spec (declared `deep-research-mode:` or Gajae `autoresearch-mode:`, H1 objective, `## Constraints`, `## Deliverables`, optional metric). Same as above: read the mission and work.
 - `/deep-research <objective>` (no `--mode`) opens an **intake**. No mission exists yet and every research tool is blocked. Clarify the goal, constraints, deliverables and mode with the user using `ask`; never infer the mode from files that happen to exist. Then call `deep_research({"op":"start","mission":{"objective":"…","mode":"data","constraints":["…"],"deliverables":["…"]}})`. Budgets, execution consent and the critic come from the user's command; the tool cannot change them. If the user will not clarify, do not research; `/deep-research cancel` abandons the intake.
 
-If no mission or intake exists, explain the commands; do not create session files by hand or invoke a shell to circumvent lifecycle controls.
+If no mission or intake exists and the user requested this workflow, start as above instead of blocking on a slash command. If the intent or scope is materially ambiguous, clarify it first. Never create session files by hand or invoke a shell to circumvent lifecycle controls. Do not replace active/paused work; read it and respect the user's resume/cancel/clear commands.
 
 Respect the persisted objective, constraints, deliverables and explicit mode. `web` accepts web evidence only; `data` accepts file/experiment evidence; `mixed` accepts all three. Only the user changes mode (`/deep-research mode …`) or execution consent (initial `--harness`/`--allow-exec` flags or `/deep-research allow harness|exec` on an open data/mixed mission). `allow harness` replaces unrestricted exec; `deny` revokes both. Permission changes preserve evidence, runs, budgets and phase; paused missions still need user `resume`. Already-running commands are not stopped.
 
