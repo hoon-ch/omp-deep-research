@@ -1,9 +1,24 @@
 # Verification record
 
-**Date:** 2026-10-22 · **Package:** `omp-deep-research@0.7.0`
+**Date:** 2026-10-22 · **Package:** `omp-deep-research@0.7.1`
 
 This is a record of verification, not a production-readiness claim.
-Published [v0.7.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.7.0) at commit `5443542`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/39621561384) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/39621555931).
+Published [v0.7.1](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.7.1) at commit `5836d13`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/39675781698) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/39675776826). Release checkout `npm run verify` passed (143 tests); `npm pack --dry-run` completed as `omp-deep-research-0.7.1.tgz` (24 files).
+
+## 0.7.1: apostrophe objectives and web read selectors (2026-10-22)
+
+- `npm run check` and `npm test`: TypeScript check and **143 tests passed**. New regressions cover an apostrophe inside an objective word, a token-start quote that never closes, ranged/`:raw` URL reads backing evidence for the clean URL and for a different range of it, a selector-suffixed string no longer counting as an opened URL, and port URLs.
+- Before release, OMP 18.12.5 web missions compared v0.7.0 with this change on the Node.js `keepAliveTimeout` and RFC 9110 `413` questions, alternating build order, 3 runs each: rejected `deep_research` calls per mission were median 0.5 (range 0 to 3, 7 total) for v0.7.0 and median 0 (range 0 to 1, 1 total) for this change; acquisition calls overlapped (median 7 vs 6.5). Both builds answered `413` / `Payload Too Large` in all 6 runs. That round alone is not significant (permutation p = 0.15). The PostgreSQL question failed to start on v0.7.0 with `Unterminated quote or trailing escape in command` (2 of 2) and reached a conclusive verdict on this change (2 of 2). Accepting `grep` receipts on URLs as web evidence was also prototyped; it was dropped because two reviewers independently found that truncated multi-URL results and selector-suffixed paths would count as opened.
+
+### 0.7.1 deployment (2026-10-22)
+
+| Host | Installed version / OMP | Observed result |
+|---|---|---|
+| Development Mac (`nima-studio`) | Enabled 0.7.1 through the existing checkout link / 18.12.5 | Smoke below passed |
+| `nima-mbp` | Installed `github:hoon-ch/omp-deep-research#v0.7.1`, enabled 0.7.1 / 18.12.5 | Installed policy contains the grep-lead sentence; smoke below passed |
+| `nimarchy` | Installed `github:hoon-ch/omp-deep-research#v0.7.1`, enabled 0.7.1 / 18.12.2 | Installed policy contains the grep-lead sentence; smoke below passed |
+
+Each host ran the same throwaway driver: automatic plugin loading, `omp --mode rpc` with the RPC UI bridge, the host's default model, a disposable workspace, `/deep-research --mode web --max-tools 10 --max-minutes 6 What is PostgreSQL's default max_connections, …` and then `/deep-research status`. On all three: no parse error, a `Research plan` notification, a conclusive verdict notification, a chat answer stating `100`, plain-text status, no extension errors, exit 0, and no rejected `deep_research` call (2, 2 and 5 acquisition calls). On `nimarchy` the model also attempted one `write`, which the web-mission policy blocked. Workspaces and the driver were removed. Existing OMP sessions were not terminated and must be restarted to load 0.7.1.
 
 ## 0.7.0: visible plans, progress, results and recovery guidance (2026-10-22)
 
