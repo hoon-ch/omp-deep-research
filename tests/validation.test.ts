@@ -129,6 +129,13 @@ test("tokenizer respects quotes without evaluating shell expressions", () => {
   assert.deepEqual(tokenize('--mode web "hello world" $(whoami)'), ["--mode", "web", "hello world", "$(whoami)"]);
   assert.throws(() => tokenize('"unterminated'), /Unterminated/);
 });
+test("command preserves apostrophes inside objective words", () => {
+  const c = parseCommand('--mode web --constraint "a b" --constraint \'two words\' -- What is PostgreSQL\'s default max_connections and why don\'t we change it\\?');
+  if (c.op !== "start") throw new Error("Expected start");
+  assert.equal(c.config.objective, "What is PostgreSQL's default max_connections and why don't we change it?");
+  assert.deepEqual(c.config.constraints, ["Research only; do not implement or modify product code.", "a b", "two words"]);
+  assert.throws(() => parseCommand('--mode web "unterminated'), /Unterminated/);
+});
 test("command parses explicit execution consent and budgets", () => {
   const c = parseCommand('--mode mixed --allow-exec --budget 3 --max-tools 10 --constraint "Do not install packages" Compare A and B', "test/main");
   assert.equal(c.op, "start"); if (c.op !== "start") return;

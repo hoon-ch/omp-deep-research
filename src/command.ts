@@ -17,7 +17,7 @@ export function tokenize(input: string): string[] {
     if (escaped) { token += c; escaped = false; started = true; continue; }
     if (c === "\\" && quote !== "'") { escaped = true; started = true; continue; }
     if (quote) { if (c === quote) quote = ""; else token += c; started = true; continue; }
-    if (c === "'" || c === '"') { quote = c; started = true; continue; }
+    if (!started && (c === "'" || c === '"')) { quote = c; started = true; continue; }
     if (/\s/.test(c)) { if (started) out.push(token); token = ""; started = false; }
     else { token += c; started = true; }
   }

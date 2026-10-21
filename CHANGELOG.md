@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Objective apostrophes:** quotes open only at the start of a command token, so objectives such as `PostgreSQL's default max_connections` no longer fail to parse. Quoted tokens, escapes and `--` retain their behavior.
+
 ## 0.7.0 — 2026-10-21
 
 - **Verdict hand-off:** saving a verdict now notifies the user of its disposition and confidence and directs the agent to answer in chat with findings, evidence IDs, sources and all caveats. Inconclusive verdicts explain how to resume. Export remains explicit.
