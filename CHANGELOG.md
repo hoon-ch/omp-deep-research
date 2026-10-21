@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.1 — 2026-10-22
 
 - **Objective apostrophes:** quotes open only at the start of a command token, so objectives such as `PostgreSQL's default max_connections` no longer fail to parse. Quoted tokens, escapes and `--` retain their behavior.
 - **Web read selectors:** read receipts and web locators now identify the fetched URL without trailing display selectors, while preserving ports and host-reported redirects. URL grep/search/GitHub results remain leads; guidance directs agents to read the located lines and cite that read as web evidence.
