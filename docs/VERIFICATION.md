@@ -1,9 +1,24 @@
 # Verification record
 
-**Date:** 2026-10-21 · **Package:** `omp-deep-research@0.6.0`
+**Date:** 2026-10-22 · **Package:** `omp-deep-research@0.7.0`
 
 This is a record of verification, not a production-readiness claim.
-Published [v0.6.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.6.0) at commit `cbb1ca2`. Release checkout `npm run verify` passed (130 tests); `npm pack --dry-run` completed as `omp-deep-research-0.6.0.tgz`.
+Published [v0.7.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.7.0) at commit `5443542`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/39621561384) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/39621555931).
+
+## 0.7.0: visible plans, progress, results and recovery guidance (2026-10-22)
+
+- `npm run check` and `npm test`: TypeScript check and **138 tests passed**. New regressions cover the per-pass plan gate (blocked until `op:"notes"`, re-required after resume, an acquisition batched with the notes call allowed, children ungated, legacy mid-pass ledgers ungated), the one-time plan notification, run IDs cited as evidence, the web-mode `file` source rejection, paused widgets in every mode, the active evidence widget within 10 lines, abort-pause notification and plain-text `status` without UI.
+- Development runs on OMP 18.12.5 found two defects before release. A plan requested only in prose (start result, queued prompt, first read) was ignored by three missions, so the plan became a gate on the first acquisition. With the gate, a model that batched `op:"notes"` with its first read had that read blocked, and the plan notification was skipped; both were fixed and covered by the batched-call regression.
+
+### 0.7.0 deployment (2026-10-22)
+
+| Host | Installed version / OMP | Observed result |
+|---|---|---|
+| Development Mac (`nima-studio`) | Enabled 0.7.0 through the existing checkout link / 18.12.5 | Web and data smokes below passed |
+| `nima-mbp` | Installed `github:hoon-ch/omp-deep-research#v0.7.0`, enabled 0.7.0 / 18.12.5 | Installed skill contains the plan-gate step; web and data smokes passed |
+| `nimarchy` | Installed `github:hoon-ch/omp-deep-research#v0.7.0`, enabled 0.7.0 / 18.12.2 | Installed skill contains the plan-gate step; web and data smokes passed |
+
+Each host ran the same throwaway driver: automatic plugin loading, `omp --mode rpc` with the RPC UI bridge, the host's default model, disposable workspaces, then `/deep-research status`, `/deep-research export` and `/deep-research cancel the freeze` after the mission settled. Web: `/deep-research --mode web --max-tools 8 --max-minutes 5 …` (Node.js `keepAliveTimeout`). Data: a pre-written `autoresearch.sh` printing `METRIC sample=7` and `/deep-research --mode data --max-tools 6 --budget 1 --metric sample --direction higher …`. On all six missions: a `Research plan` notification with no plan-gate block, an `E1 …` line in the active widget, a `verdict saved` notification, plain-text status, an export notification naming `report.md`, the `--` hint for the colliding command, no extension errors, exit 0. Data missions showed exactly one `select` with the choices `Research only`, `Harness`, `Exec`; the harness answer let `bash autoresearch.sh` run, and no tool call was rejected. Each web mission had two rejected tool calls (grep receipts cited as web evidence, a `file` source in web mode, an unknown receipt, or a policy-blocked `bash`), each message naming the fix, and still saved a verdict. The interactive TUI rendering was not exercised. Workspaces and the driver were removed. Existing OMP sessions were not terminated and must be restarted to load 0.7.0.
 
 ## 0.6.0: execution permission dialog (2026-10-21)
 
