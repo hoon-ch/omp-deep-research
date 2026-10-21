@@ -1,9 +1,14 @@
 # Verification record
 
-**Date:** 2026-10-19 · **Package:** `omp-deep-research@0.5.0`
+**Date:** 2026-10-21 · **Package:** `omp-deep-research@0.6.0`
 
 This is a record of verification, not a production-readiness claim.
 Published [v0.5.0](https://github.com/hoon-ch/omp-deep-research/releases/tag/v0.5.0) at commit `ab6ece4`. GitHub Actions passed for [the release tag](https://github.com/hoon-ch/omp-deep-research/actions/runs/39199065909) and [main](https://github.com/hoon-ch/omp-deep-research/actions/runs/39199065896), including both Node 22 and Node 24 verification/package jobs.
+
+## 0.6.0: execution permission dialog (2026-10-21)
+
+- `npm run check` and `npm test`: TypeScript check and **130 tests passed**. The new regression covers no dialog for web or flagged missions, an exec grant from a command start, dismissal staying research-only without the redundant "Execution is disabled" notice, a harness grant on `resume`, a harness grant from an agent `op:"start"` reflected in its result, and no dialog without UI.
+- OMP **18.12.2**, `anthropic/claude-opus-5-5`, `omp --mode rpc` with the RPC UI bridge, automatic loading of the linked checkout, disposable workspace with a pre-written `autoresearch.sh` printing `METRIC sample=7`. `/deep-research --mode data --max-tools 6 --budget 1 …` emitted one `extension_ui_request` `select` with the three choices; answering the harness option produced the "Harness enabled" notice. The agent then ran `bash autoresearch.sh` without a policy block, logged `R1` from that receipt, recorded experiment evidence and saved a conclusive verdict; session settled. One `op:"run"` call was first rejected for an invalid `direction` value and then retried successfully. The interactive TUI dialog itself was not exercised.
 
 ## 0.5.0: natural-language start (2026-10-19)
 

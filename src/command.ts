@@ -105,11 +105,14 @@ Options: --budget 0..8 (default 6); --max-tools 1..1000 (default 60);
 --max-minutes 1..240 (default 20); --max-tokens N; --max-cost USD (both include subagents);
 --critic @review_worker (model role or provider/model); --metric <name> --direction lower|higher;
 --constraint "..."; --deliverable "...".
-Execution is OFF by default. --harness (data/mixed) allows writing only
+Execution is OFF until you allow it. Starting or resuming a data/mixed mission
+without --harness/--allow-exec asks: research only, harness, or exec (needs an
+interactive UI; dismissing keeps research only). --harness allows writing only
 ./autoresearch.sh and running exactly \`bash autoresearch.sh\`; the harness
-itself is arbitrary code. --allow-exec (data/mixed) authorizes any bash/eval.
-Neither is a sandbox. allow/deny preserve evidence, phase and budgets; a paused
-mission still needs resume. deny does not stop already-running commands.
+itself is arbitrary code. --allow-exec authorizes any bash/eval. Both are
+data/mixed only and neither is a sandbox. allow/deny preserve evidence, phase
+and budgets; a paused mission still needs resume. deny does not stop
+already-running commands.
 Mode is never inferred from files.
 Clear retires the mission but never deletes its append-only session history.
 Resume starts a new bounded pass and preserves evidence and past verdicts.`;

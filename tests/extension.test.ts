@@ -18,12 +18,17 @@ function mockHost() {
   const prompts: { content: string; options: unknown }[] = [];
   const schema: Schema = { optional: () => schema };
   let aborted = false; let pending = false; let failPersist = false; let widget: string[] | undefined;
+  const dialogs: { title: string; options: string[] }[] = [];
+  let pick: (options: string[]) => string | undefined = () => undefined;
   const ctx: CommandContext = {
     cwd: mkdtempSync(join(tmpdir(), "omp-research-test-")), hasUI: true,
     model: { provider: "test", id: "main" }, agent: { kind: "main", id: "session-test" },
     models: { resolve: s => s === "test/critic" ? { provider: "test", id: "critic" } : undefined },
     sessionManager: { getBranch: () => entries, getSessionId: () => "session-test" },
-    ui: { notify: (message, kind) => notifications.push({ message, kind }), setStatus: () => {}, setWidget: (_key, content) => { widget = content; } },
+    ui: {
+      notify: (message, kind) => notifications.push({ message, kind }), setStatus: () => {}, setWidget: (_key, content) => { widget = content; },
+      select: async (title, options) => { dialogs.push({ title, options }); return pick(options); },
+    },
     abort: () => { aborted = true; }, hasPendingMessages: () => pending, waitForIdle: async () => {},
   };
   const api: HostAPI = {
@@ -36,7 +41,9 @@ function mockHost() {
   };
   deepResearch(api);
   return {
-    ctx, entries, tools, commands, notifications, prompts,
+    ctx, entries, tools, commands, notifications, prompts, dialogs,
+    /** Answers later permission dialogs with the first option matching `pattern`, or dismisses them. */
+    answer: (pattern: RegExp | undefined) => { pick = options => pattern && options.find(o => pattern.test(o)); },
     state: () => restore(entries),
     setPending: (v: boolean) => { pending = v; },
     failPersist: () => { failPersist = true; },
@@ -314,6 +321,45 @@ test("consent is not granted when persistence fails or a subagent invokes the co
     await h.command("allow harness"); assert.deepEqual(h.state().mission, before);
     assert.equal((h.emit("tool_call", { toolName: "bash", toolCallId: "still-denied", input: { command: "bash autoresearch.sh" } }) as { block: boolean }).block, true);
   } finally { h.cleanup(); }
+});
+test("starting or resuming a data/mixed mission without consent asks the operator, never in web or with flags", async () => {
+  const gate = (h: ReturnType<typeof mockHost>, command: string) =>
+    (h.emit("tool_call", { toolName: "bash", toolCallId: `bash-${h.entries.length}`, input: { command } }) as { block?: boolean } | undefined)?.block;
+  for (const args of ["--mode web Inspect sources", "--mode data --harness Benchmark", "--mode mixed --allow-exec Benchmark"]) {
+    const h = mockHost(); try {
+      await h.command(args); assert.equal(h.dialogs.length, 0, args);
+    } finally { h.cleanup(); }
+  }
+  const h = mockHost(); try {
+    h.answer(/any bash\/eval/);
+    await h.command("--mode data Benchmark");
+    assert.equal(h.dialogs.length, 1); assert.equal(h.state().mission!.allowExec, true);
+    assert.equal(gate(h, "echo arbitrary"), undefined);
+    assert.equal(h.prompts.length, 1); assert.doesNotMatch(h.prompts[0]!.content, /Execution is disabled/);
+  } finally { h.cleanup(); }
+  const dismissed = mockHost(); try {
+    await dismissed.command("--mode mixed Benchmark");
+    const m = dismissed.state().mission!;
+    assert.equal(dismissed.dialogs.length, 1); assert.equal(m.allowExec || m.allowHarness, false);
+    assert.equal(gate(dismissed, "bash autoresearch.sh"), true);
+    assert.ok(!dismissed.notifications.some(n => /Execution is disabled/.test(n.message)), "the operator already chose");
+    await dismissed.command("pause"); dismissed.answer(/autoresearch\.sh/);
+    await dismissed.command("resume");
+    assert.equal(dismissed.dialogs.length, 2); assert.equal(dismissed.state().mission!.allowHarness, true);
+    assert.equal(gate(dismissed, "bash autoresearch.sh"), undefined); assert.equal(gate(dismissed, "echo arbitrary"), true);
+  } finally { dismissed.cleanup(); }
+  const natural = mockHost(); try {
+    natural.answer(/autoresearch\.sh/);
+    const start = await natural.call({ op: "start", mission: { objective: "Benchmark A and B", mode: "mixed", constraints: [], deliverables: ["Table"] } });
+    assert.equal(start.isError, undefined); assert.equal(natural.dialogs.length, 1);
+    assert.equal(natural.state().mission!.allowHarness, true);
+    assert.match(start.content[0]!.text, /"allowHarness": true/); assert.doesNotMatch(start.content[0]!.text, /Execution is disabled/);
+  } finally { natural.cleanup(); }
+  const headless = mockHost(); try {
+    headless.ctx.hasUI = false; headless.ctx.mode = "rpc"; headless.answer(/any bash\/eval/);
+    await headless.command("--mode data Benchmark");
+    assert.equal(headless.dialogs.length, 0); assert.equal(headless.state().mission!.allowExec, false);
+  } finally { headless.cleanup(); }
 });
 test("without UI, command output goes to stderr and intake is refused", async () => {
   const h = mockHost(); const writes: string[] = []; const original = process.stderr.write;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — 2026-10-21
+
+- **Execution permission dialog:** starting or resuming a data/mixed mission without `--harness`/`--allow-exec` now asks the user directly, through the extension's own host `select` dialog, whether to stay research-only or allow the harness or exec. This applies to command, spec, intake and natural-language starts. Previously the only way in was to know `/deep-research allow harness|exec`; in practice permission was granted on a paused mission and never resumed, so it never took effect. A grant records the same `execution_set` event as `allow`; dismissing the dialog or running without UI (`--no-ui`, print) keeps research-only. `ask` answers and model tool calls still never grant consent. The agent no longer repeats the allow-command advice at the start of every permissionless mission; if essential experiments stay blocked, it points to `resume`, which asks again.
+
 ## 0.5.0 — 2026-10-19
 
 - **Natural-language starts:** user-requested Deep Research investigations can call `op:"start"` without a prior `/deep-research` intake. The engine applies default budgets, host-reported primary model, execution disabled and no critic; it ignores model-supplied operator settings. Command-opened intakes retain their configured settings. Active/paused work, explicit resume, execution consent, evidence provenance and verdict validation are unchanged. Tool/skill guidance distinguishes research requests from ordinary questions and coding, and asks only for missing material requirements.

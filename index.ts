@@ -110,6 +110,28 @@ export default function deepResearch(pi: HostAPI): void {
     if (l.state?.mission?.phase === "active") { persist(lifecycleEvent(l.state, "pause", undefined, reason)); refresh(ctx); }
   };
   const activeMission = (ctx: HostContext) => { const m = load(ctx).state?.mission; return m?.phase === "active" ? m : undefined; };
+  const EXECUTION_CHOICES: ReadonlyArray<readonly [string, "harness" | "exec" | undefined]> = [
+    ["Research only: read sources, run nothing", undefined],
+    ["Also run benchmarks when needed: write and run ./autoresearch.sh", "harness"],
+    ["Also run commands when needed: any bash/eval (not sandboxed)", "exec"],
+  ];
+  /**
+   * Asks the operator through the host's own dialog, never the model, whether an active data/mixed mission without
+   * consent may execute. Returns whether it asked; a dismissed dialog keeps the mission research-only.
+   */
+  async function askExecution(ctx: HostContext): Promise<boolean> {
+    const m = state(ctx).mission;
+    if (!ctx.hasUI || !m || m.phase !== "active" || m.mode === "web" || m.allowHarness || m.allowExec) return false;
+    const picked = await ctx.ui.select("Deep Research: may this mission run anything on this machine?", EXECUTION_CHOICES.map(([label]) => label));
+    const permission = EXECUTION_CHOICES.find(([label]) => label === picked)?.[1];
+    if (permission) {
+      persist(executionEvent(state(ctx), permission)); refresh(ctx);
+      output(ctx, permission === "harness"
+        ? "Harness enabled: the agent may write and run ./autoresearch.sh, which is arbitrary code. This is not an OS sandbox."
+        : "Exec enabled: bash/eval can modify your machine. This is not an OS sandbox.", "warning");
+    }
+    return true;
+  }
   for (const name of ["session_start", "session_switch", "session_branch", "session_tree", "session_compact"] as const) pi.on(name, (_event, ctx) => refresh(ctx));
 
   pi.on("before_agent_start", (event, ctx) => {
@@ -218,7 +240,7 @@ export default function deepResearch(pi: HostAPI): void {
 
   pi.registerTool({
     name: "deep_research", label: "Deep Research", loadMode: "essential", approval: "write",
-    description: "Operate Deep Research investigations requested by the user, including natural-language requests without /deep-research. Start with op='start' and objective/mode/constraints/deliverables when the request is clear; ask only for missing material requirements. Do not turn ordinary questions or coding requests into missions. Without an intake, start uses default budgets, no execution permission and no critic; with an intake, preserve its operator settings. Read summary/full/receipts/runs and research briefs; record receipt-backed evidence, runs, notes, critics and verdicts; export only when requested. Budgets, execution consent and critic configuration remain user-command-only, as do pause/resume/cancel/clear and changes to an existing mission's mode. Never replace active or paused work. No network or code execution occurs inside this tool.",
+    description: "Operate Deep Research investigations requested by the user, including natural-language requests without /deep-research. Start with op='start' and objective/mode/constraints/deliverables when the request is clear; ask only for missing material requirements. Do not turn ordinary questions or coding requests into missions. Without an intake, start uses default budgets and no critic; with an intake, preserve its operator settings. Starting a data/mixed mission without execution consent shows the user this extension's permission dialog (research only, harness or exec); never ask about execution yourself. Read summary/full/receipts/runs and research briefs; record receipt-backed evidence, runs, notes, critics and verdicts; export only when requested. Budgets, execution consent and critic configuration come only from the user, as do pause/resume/cancel/clear and changes to an existing mission's mode. Never replace active or paused work. No network or code execution occurs inside this tool.",
     parameters: toolSchema(pi.zod),
     async execute(toolCallId, input, signal, _onUpdate, ctx) {
       try {
@@ -229,9 +251,15 @@ export default function deepResearch(pi: HostAPI): void {
         const prepared = prepareOperation(s, raw, toolCallId, modelId(ctx), ctx.cwd);
         // Persist before returning success. If persistence throws, the caller sees an error.
         if (prepared.event) persist(prepared.event);
-        // A mission started mid-turn has not seen the mission system policy yet; return it with the start result.
+        const started = raw.op === "start" && prepared.event !== undefined;
+        if (started) await askExecution(ctx);
+        const m = started ? state(ctx).mission! : undefined;
+        // A mission started mid-turn has not seen the mission system policy yet; return it with the start result,
+        // with the execution consent the operator just chose rather than the pre-dialog config.
         const result = raw.op === "export" ? exportReport(s, ctx.cwd)
-          : raw.op === "start" && prepared.event ? { ...object(prepared.result), next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(state(ctx).mission!)].filter(Boolean).join(" "), policy: systemPolicy(state(ctx).mission!) } : prepared.result;
+          : m ? { ...object(prepared.result), config: { ...object(object(prepared.result).config), allowHarness: m.allowHarness, allowExec: m.allowExec },
+            next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(m)].filter(Boolean).join(" "), policy: systemPolicy(m) }
+          : prepared.result;
         refresh(ctx);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: { result } };
       } catch (error) {
@@ -307,10 +335,11 @@ export default function deepResearch(pi: HostAPI): void {
           if (settings.allowExec) output(ctx, "Execution enabled by --allow-exec: bash/eval can modify your machine. This is not an OS sandbox.", "warning");
           else if (settings.allowHarness) output(ctx, "Harness enabled by --harness: the agent may write and run ./autoresearch.sh, which is arbitrary code. This is not an OS sandbox.", "warning");
         } else if (command.op === "resume") persist(lifecycleEvent(state(ctx), "resume"));
+        const asked = await askExecution(ctx);
         refresh(ctx);
         const mission = state(ctx).mission;
         const guidance = command.op !== "intake" && mission ? executionGuidance(mission) : undefined;
-        if (guidance) output(ctx, "Execution is disabled. If experiments are needed, use /deep-research allow harness (narrower) or allow exec (arbitrary bash/eval).");
+        if (guidance && !asked) output(ctx, "Execution is disabled. If experiments are needed, use /deep-research allow harness (narrower) or allow exec (arbitrary bash/eval).");
         // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`

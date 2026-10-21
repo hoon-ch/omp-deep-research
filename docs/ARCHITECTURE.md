@@ -6,7 +6,9 @@
 
 `src/engine.ts` prepares and replays versioned events. `prepareOperation` validates an operation and returns a new event plus its result; the adapter appends the event before returning success. `src/types.ts` defines the persisted data structures. The active OMP branch is the source of truth; the adapter caches one replay per branch tip (keyed by the last research entry), so there is no shared mutable mission state across branches or child sessions.
 
-`src/command.ts` parses explicit operator lifecycle, budget, metric and spec choices. It tokenizes without shell evaluation. `--mode` produces a mission config, `--spec` a config from `src/spec.ts`, and neither produces an intake with operator settings only. Execution consent comes from initial `--harness`/`--allow-exec` flags or operator-only `allow harness|exec`/`deny` commands, never a model tool call or an `ask` response. A critic selector is resolved through the host before the mission or intake is recorded.
+`src/command.ts` parses explicit operator lifecycle, budget, metric and spec choices. It tokenizes without shell evaluation. `--mode` produces a mission config, `--spec` a config from `src/spec.ts`, and neither produces an intake with operator settings only. Execution consent comes from initial `--harness`/`--allow-exec` flags, operator-only `allow harness|exec`/`deny` commands, or the extension's own host `ui.select` dialog, never a model tool call or an `ask` response. A critic selector is resolved through the host before the mission or intake is recorded.
+
+`index.ts` shows that dialog (research only / harness / exec) whenever an active data/mixed mission without consent is created (command start, spec, agent `op:"start"` after an intake or from a natural-language request) or resumed, and only when `ctx.hasUI`. The extension, not the model, issues the dialog and reads the answer; a grant persists the same `execution_set` event as `allow`. Dismissal or a headless host keeps research only. The agent's `op:"start"` result reports the consent the operator chose.
 
 For a natural-language Deep Research request, the agent may call `op:"start"` without an intake. `src/engine.ts` supplies `DEFAULT_SETTINGS` and the host-reported primary model; model-provided budget/permission/critic fields are not applied. An existing intake instead supplies its operator settings. Both paths validate objective, mode, constraints and deliverables, merge the mandatory research-only defaults, persist one `mission_created` event and use the same receipt/verdict workflow. Active or paused missions cannot be replaced. User intent and selection of a mode from the stated request are instruction-level decisions, not a natural-language authorization parser.
 
@@ -16,12 +18,13 @@ For a natural-language Deep Research request, the agent may call `op:"start"` wi
 
 ```text
 (nothing) --operator start with --mode or --spec--> active
-(nothing) --user natural-language research request, agent op:"start"--> active (default budgets, no exec/harness/critic)
+(nothing) --user natural-language research request, agent op:"start"--> active (default budgets, no critic; data/mixed asks the operator for exec/harness)
 (nothing) --operator start without either--> intake (no mission; non-control tools blocked)
 intake --agent deep_research op:"start" with clarified objective/mode--> active
 intake --operator cancel/clear--> (nothing)
 active/paused --operator mode <m>--> same phase, new mode (mode_set)
 active/paused --operator allow harness|exec / deny--> same phase, new consent (execution_set)
+active data/mixed without consent, after start or resume --operator dialog choice--> same phase, new consent (execution_set)
 active --operator pause / abort / error / budget--> paused
 active --inconclusive verdict--> paused
 paused --operator resume (new pass budget)--> active
@@ -34,7 +37,7 @@ unreadable ledger --operator reset-ledger--> (nothing); earlier events stay in h
 
 The append-only session history survives `clear` and `reset-ledger`; current state is retired logically. Old inconclusive verdicts remain visible after resuming. Conclusive verdicts cannot be silently overwritten by a new model request. Idempotent replay of the exact already-saved verdict remains valid after completion.
 
-`execution_set` records the permission profile and prior flags. `allow harness` sets only `allowHarness`; `allow exec` sets only `allowExec`; `deny` clears both. Grants require data/mixed mode. Replay validates the profile, mode and open phase before applying it. Nothing else changes: evidence, runs, pass id, usage, deadline and remaining budgets survive. The next active-research tool call uses the replayed permission; already-running commands are not stopped. A paused mission stays paused until explicit `resume`. Permissionless data/mixed starts (including intake/spec) instruct the agent to explain the user commands before experiments and save an inconclusive verdict if essential execution remains unauthorized.
+`execution_set` records the permission profile and prior flags. `allow harness` sets only `allowHarness`; `allow exec` sets only `allowExec`; `deny` clears both. Grants require data/mixed mode. Replay validates the profile, mode and open phase before applying it. Nothing else changes: evidence, runs, pass id, usage, deadline and remaining budgets survive. The next active-research tool call uses the replayed permission; already-running commands are not stopped. A paused mission stays paused until explicit `resume`. A data/mixed mission left without permission (research only chosen, dialog dismissed, or no UI) instructs the agent not to attempt execution and, if essential execution remains unauthorized, to save an inconclusive verdict that points the user at `resume`, which asks again.
 
 ## Evidence flow
 

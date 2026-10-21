@@ -22,6 +22,8 @@ export interface HostContext {
     setStatus(key: string, value: string | undefined): void;
     /** TUI renders at most 10 lines; a no-op without UI. */
     setWidget(key: string, content: string[] | undefined, options?: { placement?: "aboveEditor" | "belowEditor" }): void;
+    /** Operator dialog; resolves to the chosen option, or undefined when dismissed or without UI. */
+    select(title: string, options: string[]): Promise<string | undefined>;
   };
   models: { resolve(spec: string): ModelIdentity | undefined };
   hasPendingMessages(): boolean;
