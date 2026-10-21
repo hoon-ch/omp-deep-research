@@ -133,10 +133,11 @@ deep-research-metric-direction: lower
 | 명령/옵션 | 동작 |
 |---|---|
 | `/deep-research <objective>` | intake 시작. 에이전트가 확인 후 `start` 호출. UI가 없는 print/json 모드에서는 거부 |
+| `/deep-research -- <objective>` | `status`·`mode` 같은 명령어 또는 `--`로 시작하는 조사 목표를 intake로 전달. `start`는 선택적 별칭 |
 | `/deep-research --mode … <objective>` | 명시한 모드로 미션 즉시 시작 |
 | `/deep-research --spec <file>` | 명세 파일로 즉시 시작. 경로와 SHA-256을 기록 |
 | `/deep-research` 또는 `help` | 사용법만 표시. 자동으로 조사하지 않음 |
-| `/deep-research status` | 목표, 현재 상태, 출처 수, 예산·사용량, 세그먼트, 마지막 결론, 대기 중인 intake |
+| `/deep-research status` | 목표, 상태·일시정지 이유, 근거·실행·영수증 수, 현재 패스 예산·남은 시간·사용량, 실행 권한, 설정한 critic, 마지막 결론과 다음 명령을 일반 텍스트로 표시 |
 | `/deep-research runs` | 현재 세그먼트 실행 표 전체 |
 | `/deep-research mode web\|data\|mixed` | 열린 미션의 모드 변경(사용자 전용). 기존 근거는 유지 |
 | `/deep-research allow harness\|exec` | 열린 data/mixed 미션의 실행 권한 대체. `harness`는 기존 `exec` 해제 |
@@ -145,7 +146,7 @@ deep-research-metric-direction: lower
 | `/deep-research resume` | 근거와 이전 결론을 유지하며 새 예산의 패스 시작. 실행 권한이 없는 data/mixed 미션이면 실행 범위를 다시 물음 |
 | `/deep-research cancel` | 미션 또는 intake 취소. 자동 재시작 없음 |
 | `/deep-research clear` | 현재 미션(또는 intake)을 논리적으로 정리. 원장은 삭제하지 않음 |
-| `/deep-research export` | 새로운 로컬 폴더에 Markdown·JSON·JSONL 저장 |
+| `/deep-research export` | 새로운 로컬 폴더에 Markdown·JSON·JSONL을 저장하고 `report.md` 경로 표시 |
 | `/deep-research reset-ledger` | 읽을 수 없는 원장(버전 불일치·손상)을 재생 대상에서 제외. 기록은 세션에 남음 |
 | `--mode web\|data\|mixed` | 생략하면 intake. 파일 존재 여부로 모드를 추론하지 않음 |
 | `--harness` | data/mixed 전용. `./autoresearch.sh` 작성과 `bash autoresearch.sh` 실행만 허용 |
@@ -161,6 +162,10 @@ deep-research-metric-direction: lower
 | `--deliverable "..."` | 산출물 요구 추가. 반복 지정 가능 |
 
 `--budget`은 전체 모델 호출 횟수가 아닙니다. 시간·도구·토큰·비용 예산은 부모 도구 호출/종료 경계에서 검사하며, 실행 중인 긴 명령을 강제 종료하지 않습니다. 토큰·비용은 메인 세션의 어시스턴트 응답과, 미션이 띄운 서브에이전트의 응답을 합산합니다. 미션이 중단되거나 예산을 소진했을 때 결론을 저장하지 못했다면, 이를 완료로 위장하지 않고 `paused`로 남깁니다.
+
+자동 일시정지는 알림에 이유와 근거 보존 여부, `/deep-research resume`·`/deep-research export`를 표시합니다. 일시정지한 미션은 편집기 위에도 이유와 두 명령을 남깁니다. data/mixed 미션에 실험 기록이 있으면 그 아래에 최근 실행 표를 함께 표시합니다. 활성 미션의 상태 줄에는 현재 패스의 남은 분이 표시됩니다.
+
+verdict를 저장하면 판정과 신뢰도를 알리고, 에이전트가 채팅에 판정·신뢰도, 각 finding의 근거 ID와 출처, 모든 caveat를 전달합니다. `inconclusive`는 미션을 일시정지하며 `/deep-research resume`으로 후속 패스를 시작합니다. 보고서는 자동으로 내보내지 않습니다.
 
 헤드리스 실행은 `omp --mode rpc --no-ui`를 씁니다. `/deep-research --mode … <objective>`를 `prompt` 명령으로 보내고 `session_settled` 프레임까지 기다리면 미션이 끝까지 실행됩니다. OMP 18.6.1의 `omp -p`는 명령이 예약한 후속 턴을 실행하지 않고 종료하므로, 미션을 시작·재개하는 명령은 기록 전에 거부합니다. UI가 없을 때 `status`·`runs`·`export`·`help` 출력과 오류는 stderr로 나갑니다.
 
@@ -282,6 +287,8 @@ io.github.hoon-ch.omp-deep-research.event.v1
   mission.json
   ledger.jsonl
 ```
+
+`/deep-research export`는 저장한 `report.md`의 전체 경로와 `mission.json`·`ledger.jsonl`도 함께 저장했음을 알립니다.
 
 기존 파일을 덮어쓰지 않으며 심볼릭 링크로 된 내보내기 상위 디렉터리를 거부합니다. 세션 기록과 보고서에는 비공개 내용이 포함될 수 있습니다. 자동 commit·전송·텔레메트리는 없습니다. `clear`는 보안 삭제 기능이 아닙니다.
 

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent, summary } from "./src/engine.ts";
+import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, makeEvent, modeEvent, prepareOperation, researchEntries, resetEvent, restore, spendReason, startEvent } from "./src/engine.ts";
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
 import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SUFFICIENCY_POLICY, systemPolicy, taskItemCount } from "./src/policy.ts";
 import { buildReceipt } from "./src/receipts.ts";
-import { exportReport } from "./src/report.ts";
+import { exportReport, minutesLeft, statusText, usageText } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
 import { toolSchema } from "./src/schema.ts";
 import { parseSpec } from "./src/spec.ts";
@@ -98,16 +98,20 @@ export default function deepResearch(pi: HostAPI): void {
       ctx.ui.setStatus(STATUS_KEY, "Research ledger unreadable · /deep-research reset-ledger"); ctx.ui.setWidget(STATUS_KEY, undefined); return;
     }
     const s = l.state; const m = s.mission;
-    const usage = m && m.pass.tokens > 0
-      ? ` · ${m.pass.tokens}${m.maxTokens ? `/${m.maxTokens}` : ""} tok (scouts ${m.pass.childTokens})${m.maxCost ? ` · $${m.pass.cost.toFixed(2)}/$${m.maxCost}` : ""}` : "";
     ctx.ui.setStatus(STATUS_KEY, s.intake ? "Research intake · clarify goal, constraints, deliverables, mode"
-      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.children}/${m.maxChildren} scouts · ${m.pass.continuations}/${m.maxContinuations} nudges${usage}` : undefined);
-    const showRuns = m && m.mode !== "web" && (m.phase === "active" || m.phase === "paused") && m.runs.length > 0;
-    ctx.ui.setWidget(STATUS_KEY, showRuns ? runTable(m, 8) : undefined, { placement: "aboveEditor" });
+      : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.children}/${m.maxChildren} scouts · ${m.pass.continuations}/${m.maxContinuations} nudges${usageText(m)}${m.phase === "active" ? ` · ${minutesLeft(m)}m left` : ""}` : undefined);
+    const showRuns = m && m.mode !== "web" && m.runs.length > 0;
+    const widget = m?.phase === "paused"
+      ? [`Paused: ${m.pauseReason ?? "no reason recorded"}`, "/deep-research resume continues · /deep-research export writes report.md", ...(showRuns ? runTable(m, 6) : [])]
+      : m?.phase === "active" && showRuns ? runTable(m, 8) : undefined;
+    ctx.ui.setWidget(STATUS_KEY, widget, { placement: "aboveEditor" });
   }
   const pause = (ctx: HostContext, reason: string) => {
     const l = load(ctx);
-    if (l.state?.mission?.phase === "active") { persist(lifecycleEvent(l.state, "pause", undefined, reason)); refresh(ctx); }
+    if (l.state?.mission?.phase === "active") {
+      persist(lifecycleEvent(l.state, "pause", undefined, reason)); refresh(ctx);
+      output(ctx, `Research paused: ${reason.trim().replace(/\.*$/, ".")} Evidence is saved. /deep-research resume continues; /deep-research export writes report.md.`, "warning");
+    }
   };
   const activeMission = (ctx: HostContext) => { const m = load(ctx).state?.mission; return m?.phase === "active" ? m : undefined; };
   const EXECUTION_CHOICES: ReadonlyArray<readonly [string, "harness" | "exec" | undefined]> = [
@@ -226,7 +230,7 @@ export default function deepResearch(pi: HostAPI): void {
     const exhausted = budgetReason(m);
     if (exhausted || m.pass.continuations >= m.maxContinuations) {
       pause(ctx, exhausted ?? "Continuation budget exhausted before a verdict was saved.");
-      output(ctx, "Research paused at its budget. Evidence is saved; use /deep-research resume or export.", "warning"); return;
+      return;
     }
     const stopId = `${event.session_id}:${m.pass.id}:${event.turn_id}`;
     if (m.pass.stopIds.includes(stopId)) return;
@@ -254,12 +258,19 @@ export default function deepResearch(pi: HostAPI): void {
         const started = raw.op === "start" && prepared.event !== undefined;
         if (started) await askExecution(ctx);
         const m = started ? state(ctx).mission! : undefined;
+        const verdict = raw.op === "verdict" && prepared.event ? state(ctx).mission!.verdicts.at(-1)! : undefined;
         // A mission started mid-turn has not seen the mission system policy yet; return it with the start result,
         // with the execution consent the operator just chose rather than the pre-dialog config.
         const result = raw.op === "export" ? exportReport(s, ctx.cwd)
           : m ? { ...object(prepared.result), config: { ...object(object(prepared.result).config), allowHarness: m.allowHarness, allowExec: m.allowExec },
             next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(m)].filter(Boolean).join(" "), policy: systemPolicy(m) }
+          : verdict ? { ...object(prepared.result),
+            next: "Verdict saved. Now answer the user in chat: the disposition and confidence, each finding with its evidence IDs and sources, and every caveat. Mention that /deep-research export writes report.md locally." +
+              (verdict.disposition === "inconclusive" ? " The mission is paused; /deep-research resume starts a follow-up pass." : "") }
           : prepared.result;
+        if (verdict) output(ctx, verdict.disposition === "conclusive"
+          ? `Deep Research verdict saved: conclusive, ${verdict.confidence} confidence. /deep-research export writes report.md.`
+          : `Deep Research verdict saved: inconclusive, ${verdict.confidence} confidence. Mission paused; /deep-research resume continues, /deep-research export writes report.md.`);
         refresh(ctx);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: { result } };
       } catch (error) {
@@ -288,13 +299,13 @@ export default function deepResearch(pi: HostAPI): void {
             throw new ResearchError("The ledger is readable and has open work; use cancel or clear instead of reset-ledger");
           persist(resetEvent(l.error ?? "Operator reset")); refresh(ctx); output(ctx, "Research ledger reset. Earlier events stay in the session history but are no longer replayed."); return;
         }
-        if (command.op === "status") { output(ctx, JSON.stringify(summary(state(ctx)), null, 2)); return; }
+        if (command.op === "status") { output(ctx, statusText(state(ctx))); return; }
         if (command.op === "runs") {
           const m = state(ctx).mission;
           if (!m) throw new ResearchError("No mission");
           output(ctx, runTable(m, 40).join("\n")); return;
         }
-        if (command.op === "export") { output(ctx, JSON.stringify(exportReport(state(ctx), ctx.cwd), null, 2)); return; }
+        if (command.op === "export") { const { directory } = exportReport(state(ctx), ctx.cwd); output(ctx, `Report written to ${directory}/report.md (also mission.json and ledger.jsonl).`); return; }
         if (command.op === "mode") {
           persist(modeEvent(state(ctx), command.mode)); refresh(ctx);
           output(ctx, `Mission mode set to ${command.mode}. Existing evidence is kept; new evidence and tools follow the new mode.`); return;

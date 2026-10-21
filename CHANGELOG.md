@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Verdict hand-off:** saving a verdict now notifies the user of its disposition and confidence and directs the agent to answer in chat with findings, evidence IDs, sources and all caveats. Inconclusive verdicts explain how to resume. Export remains explicit.
+- **Pause visibility:** automatic pauses report their reason, saved evidence and recovery commands without a duplicate budget toast. Every paused mission shows its reason above the editor; data/mixed missions retain recent runs below it.
+- **Readable status and export:** `/deep-research status` now shows plain-text mission or intake details and phase-appropriate next commands instead of JSON. `/deep-research export` prints the report path and names the accompanying JSON and JSONL files.
+- **Time remaining:** active mission status lines and `/deep-research status` show the current pass's remaining minutes, rounded up and never below zero.
+- **Actionable rejections:** findings that cite run IDs explain how to record experiment evidence first. Unknown evidence IDs list available IDs, and runs missing a metric or direction explain how to supply them.
+- **Mode-aware policy guidance:** blocked calls distinguish web missions from data/mixed missions and point to mode or execution changes that only the user can make.
+- **Command-word objectives:** help and argument errors explain how `--` lets an objective begin with a command word or flag. The optional `start` alias and existing parsing behavior are unchanged.
+
 ## 0.6.0 — 2026-10-21
 
 - **Execution permission dialog:** starting or resuming a data/mixed mission without `--harness`/`--allow-exec` now asks the user directly, through the extension's own host `select` dialog, whether to stay research-only or allow the harness or exec. This applies to command, spec, intake and natural-language starts. Previously the only way in was to know `/deep-research allow harness|exec`; in practice permission was granted on a paused mission and never resumed, so it never took effect. A grant records the same `execution_set` event as `allow`; dismissing the dialog or running without UI (`--no-ui`, print) keeps research-only. `ask` answers and model tool calls still never grant consent. The agent no longer repeats the allow-command advice at the start of every permissionless mission; if essential experiments stay blocked, it points to `resume`, which asks again.

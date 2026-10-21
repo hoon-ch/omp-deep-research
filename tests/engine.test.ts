@@ -185,6 +185,17 @@ test("conclusive verdict requires evidence-linked findings", () => {
   l.evidence(); assert.throws(() => l.op({ op: "verdict", verdict: { ...VERDICT, findings: [] } }), /cited findings/);
   assert.throws(() => l.op({ op: "verdict", verdict: { ...VERDICT, findings: [{ claim: "x", evidenceIds: [] }] } }), /at least one/);
 });
+test("verdict findings reject run IDs and explain how to cite their output", () => {
+  const l = new Ledger(); l.start({ mode: "data" });
+  const r = l.receipt({ tool: "bash", metrics: { latency_ms: 100 } });
+  l.op({ op: "run", run: { label: "Baseline", hypothesis: "Measure latency", receiptId: r.id, primaryMetric: "latency_ms", direction: "lower" } });
+  assert.throws(() => l.op({ op: "verdict", verdict: { ...VERDICT, findings: [{ claim: "Measured latency", evidenceIds: ["R1"] }] } }),
+    /R1 is an experiment run, not an evidence ID.*source "experiment".*receiptId/);
+  assert.equal(l.state().mission!.phase, "active"); assert.equal(l.state().mission!.verdicts.length, 0);
+  l.op({ op: "evidence", evidence: { source: "experiment", title: "Baseline output", claim: "Measured latency", summary: "latency_ms=100", locator: "bash baseline output", receiptId: r.id, stance: "supports" } });
+  l.op({ op: "verdict", verdict: { ...VERDICT, findings: [{ claim: "Measured latency", evidenceIds: ["E1"] }] } });
+  assert.equal(l.state().mission!.phase, "completed");
+});
 test("verdict replay remains idempotent after mission completion", () => {
   const l = new Ledger(); l.start(); l.evidence();
   const input = { op: "verdict", requestId: "final-v1", verdict: VERDICT };

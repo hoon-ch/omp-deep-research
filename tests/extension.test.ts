@@ -148,6 +148,10 @@ test("an aborted stop signal never requests auto-resume", async () => {
   const h = mockHost(); try {
     await h.command("--mode web Inspect sources"); const c = new AbortController(); c.abort();
     assert.equal(h.stop(1, c.signal), undefined); assert.equal(h.state().mission!.phase, "paused");
+    const reason = h.state().mission!.pauseReason!;
+    assert.ok(h.notifications.some(n => n.kind === "warning" && n.message.includes(reason) && n.message.includes("/deep-research resume") && n.message.includes("/deep-research export")));
+    const count = h.notifications.length;
+    h.stop(2, c.signal); assert.equal(h.notifications.length, count);
   } finally { h.cleanup(); }
 });
 test("agent error pauses; host retries marked willContinue do not", async () => {
@@ -158,6 +162,19 @@ test("agent error pauses; host retries marked willContinue do not", async () => 
     h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "error" }], willContinue: false });
     assert.equal(h.state().mission!.phase, "paused");
   } finally { h.cleanup(); }
+});
+test("paused mission widgets show their reason and recovery commands in every mode", async () => {
+  for (const mode of ["web", "data", "mixed"]) {
+    const h = mockHost(); try {
+      await h.command(`--mode ${mode} Inspect sources`); assert.equal(h.widget(), undefined);
+      h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "error" }], willContinue: false });
+      const lines = h.widget()!;
+      assert.ok(lines[0]!.includes(h.state().mission!.pauseReason!));
+      assert.ok(lines[1]!.includes("/deep-research resume")); assert.ok(lines[1]!.includes("/deep-research export"));
+      await h.command("resume"); assert.equal(h.widget(), undefined);
+      await h.command("cancel"); assert.equal(h.widget(), undefined);
+    } finally { h.cleanup(); }
+  }
 });
 test("source text is not promoted into the system prompt", async () => {
   const h = mockHost(); try {
@@ -263,6 +280,8 @@ test("harness runs appear in the run widget; web missions show none", async () =
     assert.equal((await h.call({ op: "run", run: { label: "baseline", hypothesis: "h", receiptId: "b1" } })).isError, undefined);
     assert.match(h.widget()!.join("\n"), /R1 +baseline +12/);
     assert.deepEqual(h.state().mission!.runs[0]!.asi, { cache: "cold" });
+    await h.command("pause");
+    assert.ok(h.widget()![0]!.includes(h.state().mission!.pauseReason!)); assert.match(h.widget()!.join("\n"), /R1 +baseline +12/);
   } finally { h.cleanup(); }
 });
 test("an unreadable ledger fails closed until the operator resets it", async () => {
@@ -367,7 +386,7 @@ test("without UI, command output goes to stderr and intake is refused", async ()
   try {
     h.ctx.hasUI = false;
     await h.command("status"); await h.command("Compare A and B");
-    assert.match(writes.join(""), /"mission": null/); assert.match(writes.join(""), /needs an interactive UI/);
+    assert.match(writes.join(""), /No Deep Research mission\./); assert.ok(writes.join("").includes("/deep-research <objective>")); assert.match(writes.join(""), /needs an interactive UI/);
     assert.equal(h.state().intake, undefined);
   } finally { process.stderr.write = original; h.cleanup(); }
 });

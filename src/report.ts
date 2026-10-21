@@ -5,6 +5,26 @@ import type { Mission, ResearchState } from "./types.ts";
 import { current } from "./engine.ts";
 import { segmentReports } from "./runs.ts";
 import { ResearchError } from "./validation.ts";
+export function minutesLeft(m: Mission, now = Date.now()): number { return Math.max(0, Math.ceil((Date.parse(m.pass.deadlineAt) - now) / 60_000)); }
+export function usageText(m: Mission): string {
+  return m.pass.tokens > 0
+    ? ` · ${m.pass.tokens}${m.maxTokens ? `/${m.maxTokens}` : ""} tok (scouts ${m.pass.childTokens})${m.maxCost ? ` · $${m.pass.cost.toFixed(2)}/$${m.maxCost}` : ""}` : "";
+}
+export function statusText(state: ResearchState, now = Date.now()): string {
+  if (state.intake) return `Intake pending: ${state.intake.draft || "(no objective yet)"}. Answer the agent's questions, or /deep-research cancel.`;
+  const m = state.mission;
+  if (!m) return "No Deep Research mission. Start one with /deep-research <objective>.";
+  const lines = [`Objective: ${m.objective}`, `Mode ${m.mode} · ${m.phase}${m.phase === "paused" && m.pauseReason ? ` (${m.pauseReason})` : ""}`,
+    `Evidence ${m.evidence.length} · runs ${m.runs.length} · receipts ${m.receipts.length}`,
+    `This pass: ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.children}/${m.maxChildren} scouts · ${m.pass.continuations}/${m.maxContinuations} nudges${m.phase === "active" ? ` · ${minutesLeft(m, now)}m left` : ""}${usageText(m)}`];
+  if (m.mode !== "web") lines.push(`Execution: ${m.allowExec ? "exec" : m.allowHarness ? "harness" : "research only"}`);
+  if (m.criticModel) lines.push(`Critic: ${m.criticModel}`);
+  const v = m.verdicts.at(-1);
+  if (v) lines.push(`Verdict: ${v.disposition}, ${v.confidence} confidence. ${v.summary}`);
+  const next = { active: "/deep-research pause", paused: "/deep-research resume or export", completed: "/deep-research export or clear", cancelled: "/deep-research clear" };
+  lines.push(`Next: ${next[m.phase]}`);
+  return lines.join("\n");
+}
 function plain(s: string): string { return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ""); }
 /** Untrusted text becomes literal Markdown: every syntax character is backslash-escaped, so no HTML, images or links render. */
 function md(s: string): string { return plain(s).replace(/[\\`*_{}[\]()#+\-.!|<>~=:"']/g, "\\$&").replace(/\r?\n/g, "  \n"); }

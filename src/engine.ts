@@ -255,7 +255,11 @@ function receipt(m: Mission, id: unknown, name = "receiptId"): Receipt {
 function references(m: Mission, value: unknown, name: string, required = true): string[] {
   const ids = [...new Set(strings(value, name))];
   if (required && ids.length === 0) throw new ResearchError(`${name} must cite at least one evidence ID`);
-  for (const id of ids) if (!m.evidence.some(e => e.id === id)) throw new ResearchError(`Unknown evidence ID: ${id}`);
+  for (const id of ids) if (!m.evidence.some(e => e.id === id)) {
+    if (m.runs.some(r => r.id === id))
+      throw new ResearchError(`${id} is an experiment run, not an evidence ID. Findings cite evidence IDs (E1, E2, ...): record the run's output as evidence with source "experiment" and the run's receiptId, then cite that evidence ID.`);
+    throw new ResearchError(`Unknown evidence ID: ${id}. Existing evidence IDs: ${m.evidence.slice(0, 20).map(e => e.id).join(", ") || "none yet"}${m.evidence.length > 20 ? ", ..." : ""}.`);
+  }
   return ids;
 }
 /**
@@ -412,7 +416,11 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       if (!Object.hasOwn(EXECUTION_TOOLS, r.tool))
         throw new ResearchError(`Receipt ${r.id} is a ${r.tool} result, not an executed run; log the bash/eval call that ran the experiment (e.g. bash autoresearch.sh). Cite existing result files as experiment evidence instead`);
       const contract = metricContract(m);
+      if (!contract && (p.primaryMetric === undefined || (typeof p.primaryMetric === "string" && !p.primaryMetric.trim())))
+        throw new ResearchError(`run.primaryMetric is required: name one METRIC this run printed (${Object.keys(r.metrics).join(", ") || "none printed"}), or start a segment with a metric so runs inherit it.`);
       const primaryMetric = p.primaryMetric === undefined && contract ? contract.name : text(p.primaryMetric, "primaryMetric", 64);
+      if (!contract && p.direction !== "lower" && p.direction !== "higher")
+        throw new ResearchError(`run.direction must be "lower" or "higher" (which way is better for ${primaryMetric}).`);
       const direction = p.direction === undefined && contract ? contract.direction : choice(p.direction, ["lower", "higher"], "direction");
       if (contract && (contract.name !== primaryMetric || contract.direction !== direction))
         throw new ResearchError(`Segment ${currentSegment(m).index} measures ${contract.name} (${contract.direction} is better); start a new segment to change the metric or direction`);

@@ -33,7 +33,7 @@ export function taskItemCount(input: Record<string, unknown>): number {
 // read, grep, glob and find fetch URL paths (`;`-separated lists included), so any URL path is web acquisition.
 function webInDataMode(m: Mission, toolName: string, input: Record<string, unknown>): string | undefined {
   if (m.mode === "data" && (Object.hasOwn(NETWORK, toolName) || (typeof input.path === "string" && /(?:^|[;,\s])(?:https?:\/\/|www\.)/i.test(input.path))))
-    return "Data-only mission: external web acquisition is disabled. Start a mixed mission to combine web and data.";
+    return "Data-only mission: external web acquisition is disabled. Only the user can switch modes (/deep-research mode mixed); if web sources are essential, say so in notes and the verdict caveats, otherwise continue with local data.";
   return undefined;
 }
 /** Policy for subagents spawned during an active mission; the host's agent definition still limits their tool set. */
@@ -67,7 +67,9 @@ export function blockedReason(m: Mission, toolName: string, input: Record<string
     if (m.allowHarness && (toolName === "write" || Object.hasOwn(EXEC, toolName)))
       return `Harness missions only allow write to ./${HARNESS_FILE} (regular file, no links) and a synchronous \`bash ${HARNESS_FILE}\` in the session root.`;
   }
-  return `Research-only policy blocked ${toolName}. Product edits and unknown tools are not authorized. Execution requires user consent in data/mixed mode: /deep-research allow harness (narrower) or allow exec, or the initial --harness/--allow-exec flags.`;
+  return m.mode === "web"
+    ? `Research-only policy blocked ${toolName}. Product edits and unknown tools are not authorized. Web missions never execute; only the user can change the mode (/deep-research mode data|mixed).`
+    : `Research-only policy blocked ${toolName}. Product edits and unknown tools are not authorized. Only the user can grant execution (/deep-research allow harness|exec); never issue it yourself.`;
 }
 export function intakeBlockedReason(toolName: string): string | undefined {
   if (Object.hasOwn(CONTROL, toolName)) return undefined;

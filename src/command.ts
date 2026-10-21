@@ -31,15 +31,15 @@ export function parseCommand(args: string, primaryModel?: string): Command {
   if (!tokens.length) return { op: "help" };
   const simple = ["help", "status", "runs", "resume", "pause", "cancel", "clear", "export", "reset-ledger", "deny"] as const;
   if (simple.includes(tokens[0] as typeof simple[number])) {
-    if (tokens.length !== 1) throw new ResearchError(`${tokens[0]} does not accept arguments`);
+    if (tokens.length !== 1) throw new ResearchError(`${tokens[0]} does not accept arguments. To research text that begins with "${tokens[0]}", put -- before it: /deep-research -- ${tokens.join(" ")}`);
     return { op: tokens[0] as typeof simple[number] };
   }
   if (tokens[0] === "mode") {
-    if (tokens.length !== 2) throw new ResearchError("Usage: /deep-research mode web|data|mixed");
+    if (tokens.length !== 2) throw new ResearchError(`Usage: /deep-research mode web|data|mixed. To research text that begins with "${tokens[0]}", put -- before it: /deep-research -- ${tokens.join(" ")}`);
     return { op: "mode", mode: choice(tokens[1], MODES, "mode") };
   }
   if (tokens[0] === "allow") {
-    if (tokens.length !== 2) throw new ResearchError("Usage: /deep-research allow harness|exec");
+    if (tokens.length !== 2) throw new ResearchError(`Usage: /deep-research allow harness|exec. To research text that begins with "${tokens[0]}", put -- before it: /deep-research -- ${tokens.join(" ")}`);
     return { op: "allow", permission: choice(tokens[1], ["harness", "exec"], "permission") };
   }
   if (tokens[0] === "start") tokens.shift();
@@ -91,7 +91,8 @@ export function specConfig(spec: ParsedSpec, settings: MissionSettings, source: 
     deliverables: [...new Set([...settings.deliverables, ...spec.deliverables])] });
 }
 export const HELP = `Deep Research (Gajae-inspired, not OMP's native /autoresearch)
-/deep-research <objective>                    clarifying intake, then the agent starts the mission
+/deep-research [start] <objective>            clarifying intake, then the agent starts the mission
+/deep-research -- <objective>                 objective that begins with a command word or --
 /deep-research --mode web|data|mixed <objective>   start immediately with an explicit mode
 /deep-research --spec <file.md>                start from a written spec (declares deep-research-mode:)
 /deep-research --mode data --harness <objective>   allow the ./autoresearch.sh benchmark harness
