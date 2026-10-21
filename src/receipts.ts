@@ -3,7 +3,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { CRITIC_INSTRUCTIONS } from "./briefs.ts";
 import type { ModelIdentity, ToolResult } from "./host.ts";
 import type { CriticReview, Receipt, ReceiptFile, TaskAgent } from "./types.ts";
-import { hash, isRecord, parseHarnessOutput, ResearchError } from "./validation.ts";
+import { hash, isRecord, parseHarnessOutput, ResearchError, urlFetchTarget } from "./validation.ts";
 
 const PREVIEW_CHARS = 2400;
 /** Tools whose results return local file content; only these can substantiate file evidence. */
@@ -240,7 +240,8 @@ export function buildReceipt(event: ToolResult, resolve: (spec: string) => Model
   const links = [...new Set(output.match(/https?:\/\/[^\s<>"'\])]+/g) ?? [])].slice(0, 40);
   const extra: Partial<Receipt> = {};
   if (event.toolName === "read") {
-    extra.opened = [...new Set([event.input.path, d.url, d.finalUrl].filter((v): v is string => typeof v === "string" && !!v.trim()).map(v => v.trim()))];
+    const path = typeof event.input.path === "string" ? urlFetchTarget(event.input.path.trim()) : undefined;
+    extra.opened = [...new Set([path, d.url, d.finalUrl].filter((v): v is string => typeof v === "string" && !!v.trim()).map(v => v.trim()))];
     // Line-numbered reads keep the raw text in `displayContent`.
     const raw = isRecord(d.displayContent) && typeof d.displayContent.text === "string" ? d.displayContent.text : undefined;
     const review = criticReview(raw) ?? criticReview(output);

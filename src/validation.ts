@@ -42,6 +42,23 @@ export function stable(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 export function hash(value: unknown): string { return createHash("sha256").update(stable(value)).digest("hex"); }
+const URL_RANGE_SOURCE = String.raw`L?\d+(?:(?:\.\.|[-+])L?\d*)?(?:,L?\d+(?:(?:\.\.|[-+])L?\d*)?)*`;
+const URL_READ_SELECTOR = new RegExp(`(?::(?:raw|conflicts|${URL_RANGE_SOURCE}))+$`, "i");
+export function urlFetchTarget(entry: string): string {
+  const authority = /^https?:\/\/[^/?#]+(?=\/)/i.exec(entry);
+  const selector = URL_READ_SELECTOR.exec(entry);
+  if (!authority || !selector || selector.index <= authority[0].length) return entry;
+  const chunks = selector[0].slice(1).toLowerCase().split(":");
+  if (chunks.length === 1 && (chunks[0] === "raw" || chunks[0] === "conflicts")) return entry.slice(0, selector.index);
+  if (chunks.length > 2 || (chunks.length === 2 && !chunks.includes("raw"))) return entry;
+  const range = chunks[chunks[0] === "raw" ? 1 : 0];
+  if (!range || !range.split(",").every(chunk => {
+    const match = /^l?(\d+)(?:(\.\.|[-+])l?(\d+)?)?$/.exec(chunk);
+    if (!match || Number(match[1]) < 1) return false;
+    return match[2] === "+" ? Number(match[3]) >= 1 : match[3] === undefined || Number(match[3]) >= Number(match[1]);
+  })) return entry;
+  return entry.slice(0, selector.index);
+}
 export function canonicalUrl(value: string): string {
   let u: URL;
   try { u = new URL(value); } catch { throw new ResearchError("Web evidence requires an absolute HTTP(S) locator"); }

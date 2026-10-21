@@ -3,7 +3,7 @@ import { CRITIC_AGENT, CRITIC_INSTRUCTIONS, CRITIC_OUTPUT_SCHEMA, EXPLORE_INSTRU
 import { baselineRun, bestRun, currentSegment, effectToNoise, metricContract, segmentReports, segmentRuns } from "./runs.ts";
 import type { Critic, Evidence, LedgerEvent, MetricContract, Mission, MissionConfig, MissionSettings, Mode, Pass, Receipt, ResearchState, Run, Segment, SessionEntry, Verdict } from "./types.ts";
 import { EXECUTION_TOOLS, LOCAL_CONTENT_TOOLS, locatorRefs, snapshotHash } from "./receipts.ts";
-import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text } from "./validation.ts";
+import { canonicalUrl, choice, hash, integer, isRecord, object, positiveNumber, ResearchError, strings, text, urlFetchTarget } from "./validation.ts";
 
 export const ENTRY_TYPE = "io.github.hoon-ch.omp-deep-research.event.v1";
 const EVENT_TYPES = ["ledger_reset", "intake_started", "intake_cancelled", "mission_created", "mode_set", "execution_set", "pass_resumed", "pass_paused", "mission_cancelled", "mission_cleared", "tool_counted", "children_released", "receipt_recorded", "continuation_requested", "evidence_added", "segment_started", "run_logged", "run_flagged", "notes_updated", "usage_recorded", "critic_recorded", "verdict_issued"] as const;
@@ -369,7 +369,7 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
       const r = receipt(m, e.receiptId);
       // A crashed run is an experiment result; a failed read or fetch returned no content.
       if (r.isError && !(source === "experiment" && Object.hasOwn(EXECUTION_TOOLS, r.tool))) throw new ResearchError("A failed fetch/read is not evidence of source contents");
-      const locator = source === "web" ? canonicalUrl(text(e.locator, "locator", 4000)) : text(e.locator, "locator", 4000);
+      const locator = source === "web" ? canonicalUrl(urlFetchTarget(text(e.locator, "locator", 4000))) : text(e.locator, "locator", 4000);
       if (source === "web") {
         if (r.tool !== "read") throw new ResearchError(`Receipt ${r.id} is a ${r.tool} result; search results, grep matches on a URL, github results and task summaries are leads. Read that exact URL (read path=<url>, line ranges allowed), then cite the read receipt.`);
         // Links inside a page are leads: only the URL the read requested (or the host-reported final URL) was read.

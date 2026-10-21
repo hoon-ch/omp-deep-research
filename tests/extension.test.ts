@@ -266,6 +266,76 @@ test("read URL path substantiates the source even when the response body omits i
     assert.equal(h.state().mission!.evidence.length, 1);
   } finally { h.cleanup(); }
 });
+test("ranged URL reads back clean and differently ranged locators, not another page", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web Inspect ranged documentation"); await plan(h);
+    const input = { path: "https://example.org/page:1753-1792,3228-3241" };
+    assert.equal(h.emit("tool_call", { toolName: "read", toolCallId: "ranged", input }), undefined);
+    h.emit("tool_result", { toolName: "read", toolCallId: "ranged", input, details: { url: "https://example.org/page", finalUrl: "https://example.org/final" },
+      content: [{ type: "text", text: "The requested documentation lines." }], isError: false });
+    assert.deepEqual(h.state().mission!.receipts.at(-1)!.opened, ["https://example.org/page", "https://example.org/final"]);
+    for (const [i, locator] of ["https://example.org/page", "https://example.org/page:1753-1792", input.path, "https://example.org/final"].entries()) {
+      const result = await h.call({ op: "evidence", evidence: { source: "web", title: `Read claim ${i}`, claim: `Observed statement ${i}`,
+        summary: "Documentation content", locator, receiptId: "ranged", stance: "context" } }, `ranged-evidence-${i}`);
+      assert.equal(result.isError, undefined);
+      assert.equal(h.state().mission!.evidence.at(-1)!.locator, i === 3 ? "https://example.org/final" : "https://example.org/page");
+    }
+    const rejected = await h.call({ op: "evidence", evidence: { source: "web", title: "Other page", claim: "Unseen content",
+      summary: "Not read", locator: "https://example.org/other:10-20", receiptId: "ranged", stance: "context" } }, "other-page");
+    assert.equal(rejected.isError, true); assert.match(rejected.content[0]!.text, /did not open that URL/);
+    assert.equal(h.state().mission!.evidence.length, 4);
+  } finally { h.cleanup(); }
+});
+test("URL read selectors identify the fetched page without a distinct selector URL", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web Inspect URL selectors"); await plan(h);
+    for (const [i, selector] of ["raw", "10-20:raw", "raw:10-20", "conflicts", "10", "10-20", "10-", "10+5", "10,20-30", "L10-L20", "10..20", "RAW:L10+L5"].entries()) {
+      const locator = `https://example.org/page-${i}`; const input = { path: `${locator}:${selector}` }; const id = `selector-${i}`;
+      assert.equal(h.emit("tool_call", { toolName: "read", toolCallId: id, input }), undefined);
+      h.emit("tool_result", { toolName: "read", toolCallId: id, input, content: [{ type: "text", text: "Selected source content." }], isError: false });
+      assert.deepEqual(h.state().mission!.receipts.at(-1)!.opened, [locator], selector);
+      const result = await h.call({ op: "evidence", evidence: { source: "web", title: "Selected source", claim: "Observed content",
+        summary: "Read source", locator: input.path, receiptId: id, stance: "context" } }, `selected-evidence-${i}`);
+      assert.equal(result.isError, undefined, selector); assert.equal(h.state().mission!.evidence.at(-1)!.locator, locator);
+    }
+  } finally { h.cleanup(); }
+});
+test("URL receipts preserve ports and do not peel malformed selector compounds", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web Inspect URL boundaries"); await plan(h);
+    const paths = ["https://example.org:8080", "https://example.org:8080/p", "https://example.org/page:raw:raw",
+      "https://example.org/page:10-20:30-40", "https://example.org/page:raw:conflicts", "https://example.org/page:conflicts:10",
+      "https://example.org/page:10-20:raw:30", "https://example.org/page:10+", "https://example.org/page:0",
+      "https://example.org/page:20-10", "https://example.org/page:10+0", "https://example.org/page:10-20,", "https://example.org/page:img"];
+    for (const [i, path] of paths.entries()) {
+      const id = `boundary-${i}`; const input = { path };
+      assert.equal(h.emit("tool_call", { toolName: "read", toolCallId: id, input }), undefined);
+      h.emit("tool_result", { toolName: "read", toolCallId: id, input, content: [{ type: "text", text: "Returned source content." }], isError: false });
+      assert.deepEqual(h.state().mission!.receipts.at(-1)!.opened, [path], path);
+    }
+    const input = { path: "https://example.org:8080/p:10-20" };
+    h.emit("tool_call", { toolName: "read", toolCallId: "port-range", input });
+    h.emit("tool_result", { toolName: "read", toolCallId: "port-range", input, content: [{ type: "text", text: "Selected lines." }], isError: false });
+    const result = await h.call({ op: "evidence", evidence: { source: "web", title: "Port source", claim: "Observed on the port URL",
+      summary: "Port retained", locator: input.path, receiptId: "port-range", stance: "context" } }, "port-evidence");
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(h.state().mission!.receipts.at(-1)!.opened, ["https://example.org:8080/p"]);
+    assert.equal(h.state().mission!.evidence.at(-1)!.locator, "https://example.org:8080/p");
+  } finally { h.cleanup(); }
+});
+test("grep matches on a URL remain leads and cannot back web evidence", async () => {
+  const h = mockHost(); try {
+    await h.command("--mode web Inspect matching source lines"); await plan(h);
+    const input = { path: "https://example.org/page", pattern: "default" };
+    h.emit("tool_call", { toolName: "grep", toolCallId: "url-grep", input });
+    h.emit("tool_result", { toolName: "grep", toolCallId: "url-grep", input,
+      content: [{ type: "text", text: "120: The default value is 100." }], isError: false });
+    const result = await h.call({ op: "evidence", evidence: { source: "web", title: "Search lead", claim: "Default is 100",
+      summary: "Grep match", locator: input.path, receiptId: "url-grep", stance: "supports" } }, "grep-evidence");
+    assert.equal(result.isError, true); assert.match(result.content[0]!.text, /leads.*Read that exact URL/);
+    assert.equal(h.state().mission!.evidence.length, 0);
+  } finally { h.cleanup(); }
+});
 test("an intake blocks research tools until the agent starts the clarified mission", async () => {
   const h = mockHost(); try {
     await h.command("--max-tools 3 Compare A and B");

@@ -70,7 +70,7 @@ export interface Receipt {
   metrics: Record<string, number>;
   metricError?: string;
   asi: Record<string, AsiValue>;
-  /** `read` only: what the call actually opened — the requested path/URL and the host-reported URL and final URL after redirects. */
+  /** `read` only: requested path/URL (HTTP(S) read selectors removed), plus host-reported URL and final URL after redirects. */
   opened?: string[];
   /** URLs that merely appear in the output (page links, scout suggestions): leads, never proof of reading them. */
   links: string[];
