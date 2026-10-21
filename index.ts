@@ -5,7 +5,7 @@ import { budgetReason, ENTRY_TYPE, executionEvent, intakeEvent, lifecycleEvent, 
 import { HELP, parseCommand, specConfig } from "./src/command.ts";
 import { blockedReason, childBlockedReason, executionGuidance, INTAKE_POLICY, intakeBlockedReason, isAcquisition, SUFFICIENCY_POLICY, systemPolicy, taskItemCount } from "./src/policy.ts";
 import { buildReceipt } from "./src/receipts.ts";
-import { exportReport, minutesLeft, statusText, usageText } from "./src/report.ts";
+import { exportReport, minutesLeft, statusText, usageText, widgetLines } from "./src/report.ts";
 import { runTable } from "./src/runs.ts";
 import { toolSchema } from "./src/schema.ts";
 import { parseSpec } from "./src/spec.ts";
@@ -17,6 +17,7 @@ const modelId = (ctx: HostContext) => ctx.model ? `${ctx.model.provider}/${ctx.m
 const isMain = (ctx: HostContext) => ctx.agent.kind === "main";
 const messageOf = (e: unknown) => e instanceof Error ? e.message : String(e);
 const STATUS_KEY = "omp-deep-research";
+const PLAN_GUIDANCE = 'Before the first acquisition of this pass, record your plan with deep_research op="notes" in 3-5 short lines (the sub-questions and the sources or experiments you will check). The user sees it. Then continue without waiting for approval.';
 
 type Loaded = { state: ResearchState; error?: undefined } | { state?: undefined; error: string };
 
@@ -54,6 +55,7 @@ export default function deepResearch(pi: HostAPI): void {
   pi.setLabel("OMP Deep Research");
   // Replay is cached per active branch tip: the same last research event id implies the same research history.
   let cache: { key: string; loaded: Loaded } | undefined;
+  const planningPasses = new Set<string>();
   function load(ctx: HostContext): Loaded {
     const entries = researchEntries(ctx.sessionManager.getBranch());
     const last: SessionEntry | undefined = entries.at(-1);
@@ -100,11 +102,7 @@ export default function deepResearch(pi: HostAPI): void {
     const s = l.state; const m = s.mission;
     ctx.ui.setStatus(STATUS_KEY, s.intake ? "Research intake · clarify goal, constraints, deliverables, mode"
       : m ? `Research ${m.phase} · ${m.mode} · ${m.evidence.length} evidence · ${m.runs.length} runs · ${m.pass.toolCalls.length}/${m.maxToolCalls} tools · ${m.pass.children}/${m.maxChildren} scouts · ${m.pass.continuations}/${m.maxContinuations} nudges${usageText(m)}${m.phase === "active" ? ` · ${minutesLeft(m)}m left` : ""}` : undefined);
-    const showRuns = m && m.mode !== "web" && m.runs.length > 0;
-    const widget = m?.phase === "paused"
-      ? [`Paused: ${m.pauseReason ?? "no reason recorded"}`, "/deep-research resume continues · /deep-research export writes report.md", ...(showRuns ? runTable(m, 6) : [])]
-      : m?.phase === "active" && showRuns ? runTable(m, 8) : undefined;
-    ctx.ui.setWidget(STATUS_KEY, widget, { placement: "aboveEditor" });
+    ctx.ui.setWidget(STATUS_KEY, widgetLines(m), { placement: "aboveEditor" });
   }
   const pause = (ctx: HostContext, reason: string) => {
     const l = load(ctx);
@@ -116,8 +114,8 @@ export default function deepResearch(pi: HostAPI): void {
   const activeMission = (ctx: HostContext) => { const m = load(ctx).state?.mission; return m?.phase === "active" ? m : undefined; };
   const EXECUTION_CHOICES: ReadonlyArray<readonly [string, "harness" | "exec" | undefined]> = [
     ["Research only: read sources, run nothing", undefined],
-    ["Also run benchmarks when needed: write and run ./autoresearch.sh", "harness"],
-    ["Also run commands when needed: any bash/eval (not sandboxed)", "exec"],
+    ["Harness: write and run ./autoresearch.sh only (arbitrary code, not sandboxed)", "harness"],
+    ["Exec: run any bash/eval (not sandboxed)", "exec"],
   ];
   /**
    * Asks the operator through the host's own dialog, never the model, whether an active data/mixed mission without
@@ -175,7 +173,10 @@ export default function deepResearch(pi: HostAPI): void {
     if (!m || m.phase !== "active") return;
     const blocked = blockedReason(m, event.toolName, event.input, ctx.cwd);
     if (blocked) return { block: true, reason: blocked };
+    // Parallel tool calls in one message reach this hook before the notes call executes, so a pending plan counts.
+    if (event.toolName === "deep_research" && event.input.op === "notes") planningPasses.add(m.pass.id);
     if (!isAcquisition(event.toolName)) return;
+    if (m.pass.toolCalls.length === 0 && !m.pass.planned && !planningPasses.has(m.pass.id)) return { block: true, reason: `Deep Research plan required. ${PLAN_GUIDANCE}` };
     if (m.pass.toolCalls.includes(event.toolCallId)) return;
     const exhausted = budgetReason(m);
     if (exhausted) return { block: true, reason: `${exhausted}. Use the recorded evidence to save an honest verdict; do not start new acquisition.` };
@@ -253,8 +254,13 @@ export default function deepResearch(pi: HostAPI): void {
         const s = state(ctx);
         const raw = object(input);
         const prepared = prepareOperation(s, raw, toolCallId, modelId(ctx), ctx.cwd);
+        const showPlan = raw.op === "notes" && prepared.event && s.mission?.phase === "active" && !s.mission.pass.planned;
         // Persist before returning success. If persistence throws, the caller sees an error.
         if (prepared.event) persist(prepared.event);
+        if (showPlan) {
+          const notes = state(ctx).mission!.notes;
+          output(ctx, `Research plan:\n${notes.length > 800 ? notes.slice(0, 800) + "…" : notes}`);
+        }
         const started = raw.op === "start" && prepared.event !== undefined;
         if (started) await askExecution(ctx);
         const m = started ? state(ctx).mission! : undefined;
@@ -263,10 +269,12 @@ export default function deepResearch(pi: HostAPI): void {
         // with the execution consent the operator just chose rather than the pre-dialog config.
         const result = raw.op === "export" ? exportReport(s, ctx.cwd)
           : m ? { ...object(prepared.result), config: { ...object(object(prepared.result).config), allowHarness: m.allowHarness, allowExec: m.allowExec },
-            next: ["Mission started. Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(m)].filter(Boolean).join(" "), policy: systemPolicy(m) }
+            next: ["Mission started.", PLAN_GUIDANCE, "Continue in this turn: research it now within its budgets and finish with a verdict.", executionGuidance(m)].filter(Boolean).join(" "), policy: systemPolicy(m) }
           : verdict ? { ...object(prepared.result),
             next: "Verdict saved. Now answer the user in chat: the disposition and confidence, each finding with its evidence IDs and sources, and every caveat. Mention that /deep-research export writes report.md locally." +
               (verdict.disposition === "inconclusive" ? " The mission is paused; /deep-research resume starts a follow-up pass." : "") }
+          : raw.op === "read" && (raw.view === undefined || raw.view === "summary") && s.mission?.phase === "active" && s.mission.pass.toolCalls.length === 0
+            ? { ...object(prepared.result), next: PLAN_GUIDANCE }
           : prepared.result;
         if (verdict) output(ctx, verdict.disposition === "conclusive"
           ? `Deep Research verdict saved: conclusive, ${verdict.confidence} confidence. /deep-research export writes report.md.`
@@ -354,7 +362,7 @@ export default function deepResearch(pi: HostAPI): void {
         // Queued behind the command; interactive and RPC hosts run it once the command returns.
         await pi.sendUserMessage(command.op === "intake"
           ? `A Deep Research intake is open. Draft objective from the user: ${JSON.stringify(command.draft || "(none)")}. Before any research tool runs, clarify the goal, constraints, deliverables and the mission mode (web, data or mixed) with the user using ask. Then call deep_research(op='start') with the clarified mission and, once it succeeds, carry out the research immediately in the same turn.`
-          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. Identify mandatory questions and inspect relevant authoritative sources. Follow the adaptive scout-allocation policy: choose zero, one or multiple scouts for unresolved source-discovery work, merge overlapping lanes, and use cheap direct source checks when appropriate; independent question count alone does not justify fan-out. Assess task-dependent sufficiency before additional acquisition; inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
+          : "Run the active OMP Deep Research mission. First call deep_research(op='read') for its explicit objective, mode, constraints and remaining budgets. " + PLAN_GUIDANCE + " Identify mandatory questions and inspect relevant authoritative sources. Follow the adaptive scout-allocation policy: choose zero, one or multiple scouts for unresolved source-discovery work, merge overlapping lanes, and use cheap direct source checks when appropriate; independent question count alone does not justify fan-out. Assess task-dependent sufficiency before additional acquisition; inspect actual sources, record evidence receipts, and finish with an honest structured verdict. " +
             "Never modify product code or OMP's existing goal. Respect interruption. A conclusive or inconclusive verdict ends this pass. " + (guidance ?? ""), { attribution: "agent" });
       } catch (error) {
         output(ctx, messageOf(error), "error");

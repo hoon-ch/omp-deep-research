@@ -3,9 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { exportReport, renderReport } from "../src/report.ts";
+import { exportReport, renderReport, widgetLines } from "../src/report.ts";
 import { Ledger, VERDICT } from "./helpers.ts";
 
+test("active web widgets show only the three newest evidence items as safe short lines", () => {
+  const l = new Ledger(); l.start(); assert.equal(widgetLines(undefined), undefined); assert.equal(widgetLines(l.state().mission), undefined);
+  for (let i = 1; i <= 4; i++) l.evidence({ title: i === 4 ? "\u001b\n\t" + "x".repeat(80) : `Source ${i}`, claim: `Fact ${i}`, stance: i === 3 ? "context" : "supports" });
+  assert.deepEqual(widgetLines(l.state().mission), [`E4 supports ·   ${"x".repeat(68)}`, "E3 context · Source 3", "E2 supports · Source 2"]);
+  const m = l.state().mission!; m.phase = "completed"; assert.equal(widgetLines(m), undefined);
+  m.phase = "cancelled"; assert.equal(widgetLines(m), undefined);
+});
 test("report distinguishes incomplete research from a saved verdict", () => {
   const l = new Ledger(); l.start(); assert.match(renderReport(l.state().mission!), /No verdict/);
   l.evidence(); l.op({ op: "verdict", verdict: VERDICT });

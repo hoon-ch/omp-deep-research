@@ -54,7 +54,7 @@ export function validateConfig(raw: unknown): MissionConfig {
   return { ...settings, objective: text(c.objective, "objective", 6000), mode, ...(spec ? { spec } : {}) };
 }
 function newPass(config: MissionConfig, at: string): Pass {
-  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, toolCalls: [], stopIds: [],
+  return { id: randomUUID(), startedAt: at, deadlineAt: new Date(Date.parse(at) + config.maxMinutes * 60_000).toISOString(), continuations: 0, planned: false, toolCalls: [], stopIds: [],
     children: 0, tokens: 0, cost: 0, childTokens: 0, childCost: 0 };
 }
 export function current(state: ResearchState): Mission {
@@ -124,7 +124,7 @@ function apply(state: ResearchState, event: LedgerEvent): void {
       if (!r) throw new ResearchError("Flag refers to an unknown run");
       r.flagReason = text(d.reason, "reason"); break;
     }
-    case "notes_updated": m.notes = typeof d.notes === "string" ? d.notes : ""; break;
+    case "notes_updated": m.notes = typeof d.notes === "string" ? d.notes : ""; m.pass.planned = true; break;
     case "usage_recorded": {
       const tokens = integer(d.tokens, "tokens", 0, Number.MAX_SAFE_INTEGER); const cost = positiveNumber(d.cost, "cost", Number.MAX_VALUE, true);
       m.pass.tokens += tokens; m.pass.cost += cost;
@@ -249,7 +249,8 @@ export function summary(state: ResearchState): unknown {
 }
 function receipt(m: Mission, id: unknown, name = "receiptId"): Receipt {
   const r = m.receipts.find(r => r.id === text(id, name, 200));
-  if (!r) throw new ResearchError("Unknown source receipt. Use deep_research {op:'read',view:'receipts'} after reading the actual source.");
+  if (!r) throw new ResearchError("Unknown source receipt. Use deep_research {op:'read',view:'receipts'} after reading the actual source. " +
+    (m.receipts.length ? `Newest receipts: ${m.receipts.slice(-3).reverse().map(r => `${r.id} (${r.tool})`).join(", ")}` : "No receipts yet."));
   return r;
 }
 function references(m: Mission, value: unknown, name: string, required = true): string[] {
@@ -363,13 +364,14 @@ export function prepareOperation(state: ResearchState, raw: unknown, toolCallId:
     case "evidence": {
       const e = object(input.evidence, "evidence");
       const source = choice(e.source, ["web", "file", "listing", "experiment"], "evidence.source");
-      if ((m.mode === "web" && source !== "web") || (m.mode === "data" && source === "web")) throw new ResearchError(`Evidence source ${source} is not allowed in ${m.mode} mode`);
+      if (m.mode === "web" && source !== "web") throw new ResearchError(`Evidence source ${source} is not allowed in web mode. Web missions record every source as "web": cite the exact URL you opened with read (line-ranged reads of a URL are still "web").`);
+      if (m.mode === "data" && source === "web") throw new ResearchError("Data missions cannot record web evidence. Only the user can switch modes (/deep-research mode mixed).");
       const r = receipt(m, e.receiptId);
       // A crashed run is an experiment result; a failed read or fetch returned no content.
       if (r.isError && !(source === "experiment" && Object.hasOwn(EXECUTION_TOOLS, r.tool))) throw new ResearchError("A failed fetch/read is not evidence of source contents");
       const locator = source === "web" ? canonicalUrl(text(e.locator, "locator", 4000)) : text(e.locator, "locator", 4000);
       if (source === "web") {
-        if (r.tool !== "read") throw new ResearchError("Open the original web source with read before recording evidence; search snippets, github results and task summaries are leads only");
+        if (r.tool !== "read") throw new ResearchError(`Receipt ${r.id} is a ${r.tool} result; search results, grep matches on a URL, github results and task summaries are leads. Read that exact URL (read path=<url>, line ranges allowed), then cite the read receipt.`);
         // Links inside a page are leads: only the URL the read requested (or the host-reported final URL) was read.
         const opened = (r.opened ?? []).some(ref => { try { return canonicalUrl(ref) === locator; } catch { return false; } });
         if (!opened) throw new ResearchError("This receipt did not open that URL (links found inside a page are leads); read that exact URL first");

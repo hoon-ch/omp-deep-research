@@ -2,7 +2,7 @@
 
 **Gajae Code의 autoresearch에서 착안한 Oh My Pi 전용 조사 확장입니다.** 웹·로컬 데이터·실험에서 근거를 모아 구조화된 결론을 남깁니다. OMP 코어를 포크하지 않으며 기존 `/autoresearch` 명령을 변경하지 않습니다.
 
-> 버전 0.6.0입니다. 단위·어댑터 계약 테스트와 OMP 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
+> 버전 0.7.0입니다. 단위·어댑터 계약 테스트와 OMP 실제 실행 결과는 [VERIFICATION.md](docs/VERIFICATION.md)에 기록했습니다.
 
 ```text
 자연어 Deep Research 요청 → deep_research start
@@ -30,11 +30,11 @@ Gajae의 스킬이나 CLI를 그대로 복사한 호환 레이어는 아닙니�
 OMP 18.6.1 이상이 필요합니다. 런타임 외부 의존성이 없어 빌드 없이 OMP 플러그인 관리자로 설치합니다. OMP는 git 플러그인을 `bun install`로 받으므로 `bun`이 `PATH`에 있어야 합니다(없으면 `Executable not found in $PATH: "bun"` 오류).
 
 ```bash
-omp plugin install github:hoon-ch/omp-deep-research#v0.6.0
+omp plugin install github:hoon-ch/omp-deep-research#v0.7.0
 omp plugin list            # omp-deep-research 확인
 ```
 
-설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.6.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
+설치할 때 OMP가 확장을 실제로 불러 초기화해 보고, 실패하면 설치를 되돌립니다. 새 버전은 새 태그로 다시 설치합니다(`#v0.7.0` 등). 태그 없이 `github:hoon-ch/omp-deep-research`로 설치하면 기본 브랜치를 따라가며 `omp plugin upgrade omp-deep-research`로 갱신합니다. 끄거나 지우려면 `omp plugin disable|uninstall omp-deep-research`를 씁니다. 설치·업그레이드 후에는 열린 `omp` 세션을 다시 시작해야 반영됩니다.
 
 0.3.0에서 업데이트할 때 `--critic`을 쓰면 `modelRoles.review_worker`를 설정하고 `--critic @review_worker`로 시작하세요. 업데이트 전에 요청했지만 아직 등록하지 않은 critic은 새 브리프로 다시 실행해야 합니다. 이미 등록된 과거 critic과 기존 근거·실험 원장은 유지됩니다. 설정과 재검토 조건은 [critic 안내](#5-실험과-critic)를 참고하세요.
 
@@ -56,6 +56,8 @@ Deep Research로 OMP와 Gajae Code의 최신 멀티프로바이더 지원을 공
 ```
 
 에이전트는 요청에 적힌 목표·범위·출처에서 모드를 정하고, 중요한 조건이 빠진 경우에만 질문합니다. 일반 질문이나 코딩 요청을 자동으로 조사 미션으로 바꾸지는 않습니다. 자연어 시작은 기본 예산(도구 60회, 하위 에이전트 8개, 20분, 추가 진행 6회), critic 없음으로 시작하며, data/mixed 미션이면 실행 범위를 선택 창으로 묻습니다. 이미 active/paused 미션이 있으면 덮어쓰지 않습니다. 예산이나 critic을 지정하려면 아래 명령을 사용하세요.
+
+각 패스를 시작하면 에이전트가 첫 자료 수집 전에 하위 질문과 확인할 출처 또는 실험을 3~5줄로 정리해 `deep_research(op:"notes")`로 저장합니다. 확장은 저장한 계획을 `Research plan` 알림으로 보여주며, 긴 계획은 처음 800자 뒤에 `…`를 붙입니다. 계획을 기록하기 전에는 자료 수집 도구를 차단합니다. 에이전트는 승인 응답을 기다리지 않고 조사를 계속합니다. 방향을 바꾸려면 진행 중에 중단하고 지시할 수 있습니다.
 
 `--mode`를 주면 명시한 모드로 바로 시작합니다.
 
@@ -109,9 +111,9 @@ deep-research-metric-direction: lower
 
 | 선택 | 결과 |
 |---|---|
-| `Research only` (창을 닫아도 동일) | 실행 없이 조사만 |
-| `Also run benchmarks when needed` | `--harness`와 같은 권한 |
-| `Also run commands when needed` | `--allow-exec`와 같은 권한 |
+| `Research only: read sources, run nothing` (창을 닫아도 동일) | 실행 없이 조사만 |
+| `Harness: write and run ./autoresearch.sh only (arbitrary code, not sandboxed)` | `--harness`, `allow harness`와 같은 권한 |
+| `Exec: run any bash/eval (not sandboxed)` | `--allow-exec`, `allow exec`와 같은 권한 |
 
 선택 창은 에이전트가 아니라 확장이 띄우므로 이 응답만 실행 권한으로 인정합니다. 에이전트의 `ask` 응답은 여전히 권한이 아닙니다. 대화형 UI가 없는 실행(`omp --mode rpc --no-ui` 등)에서는 창이 뜨지 않고 조사만 합니다. 조사만 선택했다가 실험이 필요해지면, 미션이 일시정지된 뒤 `/deep-research resume`을 실행하면 다시 묻습니다.
 
@@ -164,6 +166,10 @@ deep-research-metric-direction: lower
 `--budget`은 전체 모델 호출 횟수가 아닙니다. 시간·도구·토큰·비용 예산은 부모 도구 호출/종료 경계에서 검사하며, 실행 중인 긴 명령을 강제 종료하지 않습니다. 토큰·비용은 메인 세션의 어시스턴트 응답과, 미션이 띄운 서브에이전트의 응답을 합산합니다. 미션이 중단되거나 예산을 소진했을 때 결론을 저장하지 못했다면, 이를 완료로 위장하지 않고 `paused`로 남깁니다.
 
 자동 일시정지는 알림에 이유와 근거 보존 여부, `/deep-research resume`·`/deep-research export`를 표시합니다. 일시정지한 미션은 편집기 위에도 이유와 두 명령을 남깁니다. data/mixed 미션에 실험 기록이 있으면 그 아래에 최근 실행 표를 함께 표시합니다. 활성 미션의 상태 줄에는 현재 패스의 남은 분이 표시됩니다.
+
+`resume`으로 시작한 새 패스에도 첫 자료 수집 전 `op:"notes"` 계획 기록이 필요합니다. 패스의 첫 계획만 알림으로 표시하고, 이후 작업 메모는 조용히 저장합니다. 계획 기록과 미션 조회는 자료 수집 예산을 사용하지 않습니다.
+
+활성 미션은 편집기 위 진행 위젯에 최신 근거를 최대 3개 표시합니다. 각 줄에는 근거 ID, stance, 최대 70자의 제목이 나옵니다. data/mixed 미션에 실험 기록이 있으면 그 아래에 현재 세그먼트의 최근 실행을 최대 5개 표시합니다. 근거와 실험 기록이 모두 없거나 미션이 완료·취소되면 위젯을 숨깁니다.
 
 verdict를 저장하면 판정과 신뢰도를 알리고, 에이전트가 채팅에 판정·신뢰도, 각 finding의 근거 ID와 출처, 모든 caveat를 전달합니다. `inconclusive`는 미션을 일시정지하며 `/deep-research resume`으로 후속 패스를 시작합니다. 보고서는 자동으로 내보내지 않습니다.
 

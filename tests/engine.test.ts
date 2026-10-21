@@ -96,8 +96,8 @@ test("opposing stances are retained rather than deduplicated", () => {
   assert.equal(l.state().mission!.evidence.length, 2);
 });
 test("mode gates reject mismatched evidence", () => {
-  const web = new Ledger(); web.start(); assert.throws(() => web.evidence({ source: "file" }), /not allowed/);
-  const data = new Ledger(); data.start({ mode: "data" }); assert.throws(() => data.evidence(), /not allowed/);
+  const web = new Ledger(); web.start(); assert.throws(() => web.evidence({ source: "file" }), /Web missions record every source as "web"/);
+  const data = new Ledger(); data.start({ mode: "data" }); assert.throws(() => data.evidence(), /Data missions cannot record web evidence/);
 });
 test("a failed fetch cannot support source contents", () => {
   const l = new Ledger(); l.start(); const r = l.receipt({ isError: true });
@@ -454,7 +454,7 @@ test("mode changes are operator events that keep evidence and respect execution 
   assert.throws(() => modeEvent(l.state(), "mixed", NOW), /already/);
   l.add(modeEvent(l.state(), "data", NOW));
   const m = l.state().mission!; assert.equal(m.mode, "data"); assert.equal(m.evidence.length, 1);
-  assert.throws(() => l.evidence({ claim: "Another web fact" }), /not allowed in data mode/);
+  assert.throws(() => l.evidence({ claim: "Another web fact" }), /Data missions cannot record web evidence/);
 });
 test("ledger reset retires unreadable history without deleting it", () => {
   const l = new Ledger(); l.start(); l.entries.push({ type: "custom", customType: ENTRY_TYPE, data: { schemaVersion: 99 } });
@@ -470,7 +470,7 @@ test("digest changes with evidence, not unrelated source acquisition", () => {
 
 test("search snippets cannot substitute for an opened web source", () => {
   const l = new Ledger(); l.start(); const r = l.receipt({ tool: "web_search" });
-  assert.throws(() => l.evidence({ receiptId: r.id }), /Open the original/);
+  assert.throws(() => l.evidence({ receiptId: r.id }), /Read that exact URL/);
 });
 test("a real receipt cannot be used to invent an unrelated web locator", () => {
   const l = new Ledger(); l.start();

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-10-21
 
 - **Verdict hand-off:** saving a verdict now notifies the user of its disposition and confidence and directs the agent to answer in chat with findings, evidence IDs, sources and all caveats. Inconclusive verdicts explain how to resume. Export remains explicit.
 - **Pause visibility:** automatic pauses report their reason, saved evidence and recovery commands without a duplicate budget toast. Every paused mission shows its reason above the editor; data/mixed missions retain recent runs below it.
@@ -9,6 +9,10 @@
 - **Actionable rejections:** findings that cite run IDs explain how to record experiment evidence first. Unknown evidence IDs list available IDs, and runs missing a metric or direction explain how to supply them.
 - **Mode-aware policy guidance:** blocked calls distinguish web missions from data/mixed missions and point to mode or execution changes that only the user can make.
 - **Command-word objectives:** help and argument errors explain how `--` lets an objective begin with a command word or flag. The optional `start` alias and existing parsing behavior are unchanged.
+- **Evidence recovery guidance:** source/mode mismatches explain the correct source type or operator-only mode switch. Non-read web receipts direct the agent to read the exact URL, and unknown receipt errors list the three newest receipts or say none exist.
+- **Pass plan preview:** each new or resumed pass blocks main-session acquisition until the agent records a 3-5-line plan with `op:"notes"`. The plan is saved in the ledger and shown in a `Research plan` notification, truncated to 800 characters with an ellipsis when needed. Later notes stay silent, children are not gated, and research continues without waiting for approval.
+- **Permission names:** the execution dialog consistently names its choices Research only, Harness and Exec and states the arbitrary-code and sandbox limits.
+- **Active progress widget:** active missions show the three newest evidence titles with IDs and stances. Data/mixed missions also show up to five recent runs; paused notices retain their existing run table.
 
 ## 0.6.0 — 2026-10-21
 

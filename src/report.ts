@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Mission, ResearchState } from "./types.ts";
 import { current } from "./engine.ts";
-import { segmentReports } from "./runs.ts";
+import { runTable, segmentReports } from "./runs.ts";
 import { ResearchError } from "./validation.ts";
 export function minutesLeft(m: Mission, now = Date.now()): number { return Math.max(0, Math.ceil((Date.parse(m.pass.deadlineAt) - now) / 60_000)); }
 export function usageText(m: Mission): string {
@@ -26,6 +26,14 @@ export function statusText(state: ResearchState, now = Date.now()): string {
   return lines.join("\n");
 }
 function plain(s: string): string { return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ""); }
+export function widgetLines(m: Mission | undefined): string[] | undefined {
+  if (!m || (m.phase !== "active" && m.phase !== "paused")) return undefined;
+  const showRuns = m.mode !== "web" && m.runs.length > 0;
+  if (m.phase === "paused") return [`Paused: ${m.pauseReason ?? "no reason recorded"}`, "/deep-research resume continues · /deep-research export writes report.md", ...(showRuns ? runTable(m, 6) : [])];
+  const lines = m.evidence.slice(-3).reverse().map(e => `${e.id} ${e.stance} · ${plain(e.title).replace(/[\t\r\n]/g, " ").slice(0, 70)}`);
+  if (showRuns) lines.push(...runTable(m, 5));
+  return lines.length ? lines : undefined;
+}
 /** Untrusted text becomes literal Markdown: every syntax character is backslash-escaped, so no HTML, images or links render. */
 function md(s: string): string { return plain(s).replace(/[\\`*_{}[\]()#+\-.!|<>~=:"']/g, "\\$&").replace(/\r?\n/g, "  \n"); }
 function cell(s: string): string { return md(s).replace(/ {2}\n/g, " "); }

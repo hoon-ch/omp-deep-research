@@ -48,6 +48,7 @@ export interface Pass {
   startedAt: string;
   deadlineAt: string;
   continuations: number;
+  planned?: boolean;
   toolCalls: string[];
   stopIds: string[];
   /** Subagents spawned in this pass. */
